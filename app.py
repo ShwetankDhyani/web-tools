@@ -198,15 +198,43 @@ def video_file(task_id: str):
 # API – Paywall Remover
 # ---------------------------------------------------------------------------
 
-READER_HEADERS = {
+BROWSER_HEADERS = {
     "User-Agent": (
-        "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
     ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.5",
     "Referer": "https://www.google.com/",
     "DNT": "1",
+    "Upgrade-Insecure-Requests": "1",
+    "Cache-Control": "no-cache",
 }
+
+GOOGLEBOT_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+}
+
+
+def _has_article_content(html: str) -> bool:
+    """Heuristic: check if the HTML likely has real article text."""
+    soup = BeautifulSoup(html, "lxml")
+    text = soup.get_text(separator=" ", strip=True)
+    return len(text) > 800
+
+
+def _try_fetch(url: str, headers: dict) -> str | None:
+    try:
+        resp = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+        if resp.status_code == 200 and _has_article_content(resp.text):
+            return resp.text
+    except Exception:
+        pass
+    return None
 
 
 def _fetch_via_archive(url: str) -> str | None:
@@ -214,8 +242,8 @@ def _fetch_via_archive(url: str) -> str | None:
     # Google cache
     try:
         cache_url = f"https://webcache.googleusercontent.com/search?q=cache:{url}"
-        resp = requests.get(cache_url, headers=READER_HEADERS, timeout=15)
-        if resp.status_code == 200 and len(resp.text) > 500:
+        resp = requests.get(cache_url, headers=BROWSER_HEADERS, timeout=15)
+        if resp.status_code == 200 and _has_article_content(resp.text):
             return resp.text
     except Exception:
         pass
@@ -226,8 +254,8 @@ def _fetch_via_archive(url: str) -> str | None:
         meta = requests.get(archive_api, timeout=10).json()
         snap = meta.get("archived_snapshots", {}).get("closest", {})
         if snap.get("available"):
-            resp = requests.get(snap["url"], headers=READER_HEADERS, timeout=15)
-            if resp.status_code == 200:
+            resp = requests.get(snap["url"], headers=BROWSER_HEADERS, timeout=15)
+            if resp.status_code == 200 and _has_article_content(resp.text):
                 return resp.text
     except Exception:
         pass
@@ -237,22 +265,21 @@ def _fetch_via_archive(url: str) -> str | None:
 
 def _clean_article(html: str, url: str) -> dict:
     """Use readability to extract the article body."""
+    from urllib.parse import urlparse
+
     doc = Document(html, url=url)
     title = doc.title()
     content_html = doc.summary()
 
-    # Also extract plain text for a fallback
     soup = BeautifulSoup(content_html, "lxml")
 
     # Fix relative image URLs
+    parsed = urlparse(url)
     for img in soup.find_all("img"):
         src = img.get("src", "")
         if src.startswith("//"):
             img["src"] = "https:" + src
         elif src.startswith("/"):
-            from urllib.parse import urlparse
-
-            parsed = urlparse(url)
             img["src"] = f"{parsed.scheme}://{parsed.netloc}{src}"
 
     return {
@@ -270,21 +297,27 @@ def paywall_read():
     if not url:
         return jsonify({"error": "URL is required"}), 400
 
-    # Strategy 1: Direct fetch with bot-like headers (many sites serve full
-    # content to crawlers for SEO).
     html = None
-    try:
-        resp = requests.get(url, headers=READER_HEADERS, timeout=15)
-        if resp.status_code == 200:
-            html = resp.text
-    except Exception:
-        pass
 
-    # Strategy 2: Archive fallback
-    if not html or len(html) < 500:
-        archive_html = _fetch_via_archive(url)
-        if archive_html:
-            html = archive_html
+    # Strategy 1: Normal browser user-agent (works for most sites)
+    html = _try_fetch(url, BROWSER_HEADERS)
+
+    # Strategy 2: Googlebot user-agent (some sites serve full content to crawlers)
+    if not html:
+        html = _try_fetch(url, GOOGLEBOT_HEADERS)
+
+    # Strategy 3: Google cache + archive.org
+    if not html:
+        html = _fetch_via_archive(url)
+
+    # Strategy 4: Last resort – direct fetch without content check
+    if not html:
+        try:
+            resp = requests.get(url, headers=BROWSER_HEADERS, timeout=15, allow_redirects=True)
+            if resp.status_code == 200 and len(resp.text) > 200:
+                html = resp.text
+        except Exception:
+            pass
 
     if not html:
         return jsonify({"error": "Could not fetch the article. The site may block all automated access."}), 502
