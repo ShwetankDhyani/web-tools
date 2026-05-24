@@ -56,7 +56,7 @@
     }
     figure { margin: 1.5em 0; }
     table { max-width: 100%; overflow-x: auto; display: block; }
-    nav, header, footer, aside,
+    nav, header, footer, aside, noscript,
     [class*="sidebar"], [class*="nav-"],
     [class*="header-"], [class*="footer-"],
     [class*="social"], [class*="share"],
@@ -65,7 +65,14 @@
     [class*="popup"], [class*="modal"],
     [class*="banner"], [class*="promo"],
     [class*="advert"], [class*="sponsor"],
-    [id*="cookie"], [id*="consent"] {
+    [class*="noscript"], [class*="no-js"],
+    [class*="blocker"], [class*="gate"],
+    [class*="paywall"], [class*="subscribe"],
+    [class*="signin"], [class*="sign-in"],
+    [id*="cookie"], [id*="consent"],
+    [id*="paywall"], [id*="gate"],
+    [data-testid*="paywall"],
+    [aria-label*="subscription"] {
       display: none !important;
     }
   </style>

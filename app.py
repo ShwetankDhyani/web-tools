@@ -539,6 +539,23 @@ def _clean_article(html: str, url: str) -> dict:
             a_tag["href"] = _resolve_url(href, base_url)
         a_tag["target"] = "_blank"
 
+    # Remove noscript tags and JS/ad-blocker warnings
+    for noscript in soup.find_all("noscript"):
+        noscript.decompose()
+    for el in soup.find_all(string=re.compile(
+        r"(enable\s+javascript|disable.*ad\s*block|turn off.*ad\s*block"
+        r"|javascript\s+is\s+(required|disabled|not\s+enabled)"
+        r"|please\s+enable\s+js|browser.*not\s+support)",
+        re.IGNORECASE,
+    )):
+        parent = el.find_parent(["div", "section", "p", "span", "aside"])
+        if parent and len(parent.get_text(strip=True)) < 500:
+            parent.decompose()
+
+    # Remove script tags (they can't execute in sandbox anyway)
+    for script in soup.find_all("script"):
+        script.decompose()
+
     return {
         "title": title,
         "content": str(soup),
