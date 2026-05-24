@@ -4,11 +4,18 @@
 {% block content %}
 <section class="tool-page">
   <h1>Paywall Remover</h1>
-  <p class="tool-desc">Paste the URL of a paywalled article and read it for free in a clean, distraction-free format.</p>
+  <p class="tool-desc">Paste the URL of a paywalled article and read it for free. Choose between the original look or a clean reader view.</p>
 
   <div class="input-group">
     <input type="url" id="articleUrl" placeholder="https://www.nytimes.com/2025/..." autocomplete="off" />
     <button id="readBtn" class="btn-primary">Read Article</button>
+  </div>
+
+  <!-- View mode toggle -->
+  <div id="viewToggle" class="view-toggle hidden">
+    <button id="btnOriginal" class="toggle-btn active" data-mode="original">Original Look</button>
+    <button id="btnReader" class="toggle-btn" data-mode="reader">Reader View</button>
+    <a id="articleSource" href="#" target="_blank" rel="noopener" class="source-link">View original &rarr;</a>
   </div>
 
   <!-- Loading -->
@@ -17,11 +24,15 @@
     <p>Fetching article content&hellip;</p>
   </div>
 
-  <!-- Article -->
+  <!-- Original view (iframe) -->
+  <div id="originalSection" class="original-section hidden">
+    <iframe id="originalFrame" sandbox="allow-same-origin" class="original-frame"></iframe>
+  </div>
+
+  <!-- Reader view -->
   <div id="articleSection" class="article-section hidden">
     <div class="article-header">
       <h2 id="articleTitle"></h2>
-      <a id="articleSource" href="#" target="_blank" rel="noopener" class="source-link">View original</a>
     </div>
     <div id="articleContent" class="article-body"></div>
   </div>

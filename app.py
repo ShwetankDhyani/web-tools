@@ -320,15 +320,12 @@ def _fetch_via_archive(url: str) -> str | None:
 
 def _clean_article(html: str, url: str) -> dict:
     """Use readability to extract the article body."""
-    from urllib.parse import urlparse
-
     doc = Document(html, url=url)
     title = doc.title()
     content_html = doc.summary()
 
     soup = BeautifulSoup(content_html, "lxml")
 
-    # Fix relative image URLs
     parsed = urlparse(url)
     for img in soup.find_all("img"):
         src = img.get("src", "")
@@ -345,27 +342,185 @@ def _clean_article(html: str, url: str) -> dict:
     }
 
 
-@app.route("/api/paywall/read", methods=["POST"])
-def paywall_read():
-    data = request.get_json(force=True)
-    url = data.get("url", "").strip()
-    if not url:
-        return jsonify({"error": "URL is required"}), 400
+# Common paywall-related CSS classes, IDs, and element patterns to remove
+PAYWALL_SELECTORS = [
+    # Overlay / modal
+    '[class*="paywall"]', '[id*="paywall"]',
+    '[class*="subscribe"]', '[id*="subscribe"]',
+    '[class*="metering"]', '[id*="metering"]',
+    '[class*="gateway"]', '[id*="gateway"]',
+    '[class*="regwall"]', '[id*="regwall"]',
+    '[class*="piano"]', '[id*="piano"]',
+    '[class*="tp-modal"]', '[id*="tp-modal"]',
+    '[class*="tp-container"]', '[id*="tp-container"]',
+    '[class*="overlay"]', '[id*="overlay"]',
+    '[class*="truncate"]', '[id*="truncate"]',
+    '[class*="fade-out"]', '[class*="gradient-mask"]',
+    '[class*="premium-block"]', '[class*="locked"]',
+    '[class*="signup-wall"]', '[class*="reg-gate"]',
+    '[class*="nag"]', '[id*="nag"]',
+    '[class*="meter"]', '[id*="meter"]',
+    '[class*="blocker"]', '[id*="blocker"]',
+    # Cookie/GDPR banners
+    '[class*="cookie-banner"]', '[id*="cookie-banner"]',
+    '[class*="consent"]', '[id*="consent"]',
+    '[class*="gdpr"]', '[id*="gdpr"]',
+    # Ads
+    '[class*="ad-container"]', '[class*="ad-wrapper"]',
+    '[class*="advertisement"]', '[id*="google_ads"]',
+]
 
-    html = None
+PAYWALL_STYLE_OVERRIDES = """
+<style id="webtools-paywall-override">
+  body {
+    overflow: auto !important;
+    position: static !important;
+    height: auto !important;
+  }
+  html {
+    overflow: auto !important;
+  }
+  /* Remove any blur, fade, or truncation overlays */
+  [class*="paywall"], [class*="truncat"], [class*="fade"],
+  [class*="blocker"], [class*="overlay"][class*="pay"],
+  [class*="piano"], [class*="tp-modal"], [class*="regwall"],
+  [class*="subscribe-wall"], [class*="meter-wall"] {
+    display: none !important;
+  }
+  /* Ensure article content is fully visible */
+  article, [role="main"], .article-body, .story-body,
+  .post-content, .entry-content, .article-content {
+    max-height: none !important;
+    overflow: visible !important;
+    -webkit-mask: none !important;
+    mask: none !important;
+  }
+</style>
+"""
 
-    # Strategy 1: Normal browser user-agent (works for most sites)
+
+def _clean_original_page(html: str, url: str) -> dict:
+    """Strip paywall elements while preserving the original page styling."""
+    soup = BeautifulSoup(html, "lxml")
+    parsed = urlparse(url)
+    base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+    # Get title before modifying
+    title = ""
+    if soup.title:
+        title = soup.title.get_text(strip=True)
+    og_title = soup.find("meta", property="og:title")
+    if og_title and og_title.get("content"):
+        title = og_title["content"].strip()
+
+    # Remove all script tags (kills paywall JS)
+    for script in soup.find_all("script"):
+        script.decompose()
+
+    # Remove noscript tags that often contain paywall fallbacks
+    for noscript in soup.find_all("noscript"):
+        noscript.decompose()
+
+    # Remove paywall-related elements
+    for selector in PAYWALL_SELECTORS:
+        for el in soup.select(selector):
+            el.decompose()
+
+    # Remove elements with inline styles that block scrolling or hide content
+    for el in soup.find_all(style=True):
+        style = el.get("style", "").lower()
+        if any(kw in style for kw in ["overflow: hidden", "overflow:hidden",
+                                       "display: none", "display:none",
+                                       "position: fixed", "position:fixed"]):
+            if el.name in ("div", "section", "aside", "footer"):
+                # Check if it's likely a paywall overlay (small or no text content)
+                text = el.get_text(strip=True)
+                if len(text) < 200:
+                    el.decompose()
+                else:
+                    # Just fix the style, don't remove
+                    el["style"] = re.sub(
+                        r'overflow\s*:\s*hidden', 'overflow: visible', el["style"], flags=re.I
+                    )
+
+    # Fix relative URLs for CSS, images, links
+    for tag in soup.find_all("link", rel="stylesheet"):
+        href = tag.get("href", "")
+        if href.startswith("//"):
+            tag["href"] = "https:" + href
+        elif href.startswith("/"):
+            tag["href"] = base_url + href
+
+    for img in soup.find_all("img"):
+        src = img.get("src", "")
+        if src.startswith("//"):
+            img["src"] = "https:" + src
+        elif src.startswith("/"):
+            img["src"] = base_url + src
+        # Also fix srcset
+        srcset = img.get("srcset", "")
+        if srcset:
+            parts = []
+            for part in srcset.split(","):
+                part = part.strip()
+                if part.startswith("//"):
+                    part = "https:" + part
+                elif part.startswith("/"):
+                    part = base_url + part
+                parts.append(part)
+            img["srcset"] = ", ".join(parts)
+
+    for a_tag in soup.find_all("a"):
+        href = a_tag.get("href", "")
+        if href.startswith("/") and not href.startswith("//"):
+            a_tag["href"] = base_url + href
+
+    for source in soup.find_all("source"):
+        srcset = source.get("srcset", "")
+        if srcset:
+            parts = []
+            for part in srcset.split(","):
+                part = part.strip()
+                if part.startswith("//"):
+                    part = "https:" + part
+                elif part.startswith("/"):
+                    part = base_url + part
+                parts.append(part)
+            source["srcset"] = ", ".join(parts)
+
+    # Add base tag for any remaining relative URLs
+    if soup.head:
+        base_tag = soup.new_tag("base", href=base_url + "/")
+        base_tag["target"] = "_blank"
+        soup.head.insert(0, base_tag)
+    elif soup.html:
+        head = soup.new_tag("head")
+        base_tag = soup.new_tag("base", href=base_url + "/")
+        base_tag["target"] = "_blank"
+        head.append(base_tag)
+        soup.html.insert(0, head)
+
+    # Inject paywall-override styles
+    override_soup = BeautifulSoup(PAYWALL_STYLE_OVERRIDES, "html.parser")
+    if soup.head:
+        soup.head.append(override_soup)
+    elif soup.body:
+        soup.body.insert(0, override_soup)
+
+    return {
+        "title": title,
+        "original_html": str(soup),
+        "source_url": url,
+    }
+
+
+def _fetch_article_html(url: str) -> str | None:
+    """Try multiple strategies to fetch article HTML."""
     html = _try_fetch(url, BROWSER_HEADERS)
-
-    # Strategy 2: Googlebot user-agent (some sites serve full content to crawlers)
     if not html:
         html = _try_fetch(url, GOOGLEBOT_HEADERS)
-
-    # Strategy 3: Google cache + archive.org
     if not html:
         html = _fetch_via_archive(url)
-
-    # Strategy 4: Last resort – direct fetch without content check
     if not html:
         try:
             resp = requests.get(url, headers=BROWSER_HEADERS, timeout=15, allow_redirects=True)
@@ -373,12 +528,28 @@ def paywall_read():
                 html = resp.text
         except Exception:
             pass
+    return html
+
+
+@app.route("/api/paywall/read", methods=["POST"])
+def paywall_read():
+    data = request.get_json(force=True)
+    url = data.get("url", "").strip()
+    mode = data.get("mode", "reader")  # "reader" or "original"
+    if not url:
+        return jsonify({"error": "URL is required"}), 400
+
+    html = _fetch_article_html(url)
 
     if not html:
         return jsonify({"error": "Could not fetch the article. The site may block all automated access."}), 502
 
-    article = _clean_article(html, url)
-    return jsonify(article)
+    if mode == "original":
+        result = _clean_original_page(html, url)
+    else:
+        result = _clean_article(html, url)
+
+    return jsonify(result)
 
 
 # ---------------------------------------------------------------------------

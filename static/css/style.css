@@ -156,7 +156,7 @@ img { max-width: 100%; height: auto; }
 
 /* ---- Tool Page ---- */
 .tool-page {
-  max-width: 760px;
+  max-width: 960px;
   margin: 0 auto;
 }
 .tool-page h1 {
@@ -334,6 +334,51 @@ img { max-width: 100%; height: auto; }
   padding-left: 1rem;
   margin: 1rem 0;
   color: var(--text-muted);
+}
+
+/* ---- View Toggle ---- */
+.view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+.toggle-btn {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.toggle-btn:hover { color: var(--text); border-color: var(--primary); }
+.toggle-btn.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.view-toggle .source-link {
+  margin-left: auto;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+/* ---- Original View ---- */
+.original-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #fff;
+}
+.original-frame {
+  width: 100%;
+  min-height: 80vh;
+  border: none;
+  display: block;
 }
 
 /* ---- Loading ---- */
