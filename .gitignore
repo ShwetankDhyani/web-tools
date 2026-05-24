@@ -16,3 +16,4 @@ downloads/
 *.avi
 *.flv
 .DS_Store
+*.db
