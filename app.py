@@ -828,9 +828,9 @@ def _send_price_alert(product: dict, new_price: float):
 
 
 def _check_prices_loop():
-    """Background thread that checks prices every 30 minutes."""
+    """Background thread that checks prices every 3 minutes."""
     while True:
-        time.sleep(1800)  # 30 minutes
+        time.sleep(180)  # 3 minutes
         try:
             conn = _get_db()
             products = conn.execute(
