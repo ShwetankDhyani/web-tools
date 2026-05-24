@@ -4,18 +4,11 @@
 {% block content %}
 <section class="tool-page">
   <h1>Paywall Remover</h1>
-  <p class="tool-desc">Paste the URL of a paywalled article and read it for free. Choose between the original look or a clean reader view.</p>
+  <p class="tool-desc">Paste the URL of a paywalled article and read it for free, styled like the original site.</p>
 
   <div class="input-group">
     <input type="url" id="articleUrl" placeholder="https://www.nytimes.com/2025/..." autocomplete="off" />
     <button id="readBtn" class="btn-primary">Read Article</button>
-  </div>
-
-  <!-- View mode toggle -->
-  <div id="viewToggle" class="view-toggle hidden">
-    <button id="btnOriginal" class="toggle-btn active" data-mode="original">Original Look</button>
-    <button id="btnReader" class="toggle-btn" data-mode="reader">Reader View</button>
-    <a id="articleSource" href="#" target="_blank" rel="noopener" class="source-link">View original &rarr;</a>
   </div>
 
   <!-- Loading -->
@@ -24,17 +17,17 @@
     <p>Fetching article content&hellip;</p>
   </div>
 
-  <!-- Original view (iframe) -->
-  <div id="originalSection" class="original-section hidden">
-    <iframe id="originalFrame" sandbox="allow-same-origin" class="original-frame"></iframe>
-  </div>
-
-  <!-- Reader view -->
+  <!-- Article rendered with original site styles -->
   <div id="articleSection" class="article-section hidden">
-    <div class="article-header">
-      <h2 id="articleTitle"></h2>
+    <div class="article-site-bar">
+      <img id="siteFavicon" class="site-favicon" src="" alt="" />
+      <span id="siteName" class="site-name"></span>
+      <a id="articleSource" href="#" target="_blank" rel="noopener" class="source-link">View original &rarr;</a>
     </div>
-    <div id="articleContent" class="article-body"></div>
+    <h1 id="articleTitle" class="article-title"></h1>
+    <div id="articleFrame" class="article-frame">
+      <iframe id="styledFrame" sandbox="allow-same-origin" class="styled-article-frame"></iframe>
+    </div>
   </div>
 
   <!-- Error -->
