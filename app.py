@@ -274,6 +274,41 @@ GOOGLEBOT_HEADERS = {
     "Accept-Language": "en-US,en;q=0.5",
 }
 
+FACEBOOK_HEADERS = {
+    "User-Agent": "facebookexternalhit/1.1",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+}
+
+GOOGLE_REFERRER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Referer": "https://www.google.com/",
+    "X-Forwarded-For": "66.249.66.1",
+}
+
+
+TRACKING_PARAMS = {
+    "mod", "utm_source", "utm_medium", "utm_campaign", "utm_term",
+    "utm_content", "ref", "fbclid", "gclid", "mc_cid", "mc_eid",
+    "s_cid", "soc_src", "soc_trk", "linkId", "from", "source",
+}
+
+
+def _clean_url(url: str) -> str:
+    """Strip tracking query parameters that break archive lookups."""
+    parsed = urlparse(url)
+    if not parsed.query:
+        return url
+    from urllib.parse import parse_qs, urlencode
+    params = {k: v for k, v in parse_qs(parsed.query).items()
+              if k.lower() not in TRACKING_PARAMS}
+    cleaned = parsed._replace(query=urlencode(params, doseq=True))
+    return cleaned.geturl()
+
 
 def _has_article_content(html: str) -> bool:
     """Heuristic: check if the HTML likely has real article text."""
@@ -292,9 +327,8 @@ def _try_fetch(url: str, headers: dict) -> str | None:
     return None
 
 
-def _fetch_via_archive(url: str) -> str | None:
-    """Try Google's webcache, then archive.org."""
-    # Google cache
+def _fetch_via_google_cache(url: str) -> str | None:
+    """Try Google's webcache."""
     try:
         cache_url = f"https://webcache.googleusercontent.com/search?q=cache:{url}"
         resp = requests.get(cache_url, headers=BROWSER_HEADERS, timeout=15)
@@ -302,19 +336,81 @@ def _fetch_via_archive(url: str) -> str | None:
             return resp.text
     except Exception:
         pass
+    return None
 
-    # archive.org
+
+def _clean_wayback_html(html: str) -> str:
+    """Strip Wayback Machine's injected toolbar and fix archived URLs."""
+    # Remove the Wayback toolbar
+    html = re.sub(
+        r'<!--\s*BEGIN WAYBACK TOOLBAR INSERT\s*-->.*?<!--\s*END WAYBACK TOOLBAR INSERT\s*-->',
+        '', html, flags=re.DOTALL
+    )
+    # Remove Wayback's injected scripts/styles
+    html = re.sub(r'<script[^>]*src="[^"]*web\.archive\.org[^"]*"[^>]*></script>', '', html)
+    html = re.sub(r'<link[^>]*href="[^"]*web\.archive\.org[^"]*"[^>]*/?>', '', html)
+    # Fix archived URLs: /web/20240101/https://... -> https://...
+    html = re.sub(
+        r'(?:https?://web\.archive\.org)?/web/\d+(?:im_|js_|cs_|id_)?/?(https?://)',
+        r'\1', html
+    )
+    return html
+
+
+def _fetch_via_archive_org(url: str) -> str | None:
+    """Try archive.org Wayback Machine."""
     try:
         archive_api = f"https://archive.org/wayback/available?url={url}"
         meta = requests.get(archive_api, timeout=10).json()
         snap = meta.get("archived_snapshots", {}).get("closest", {})
         if snap.get("available"):
-            resp = requests.get(snap["url"], headers=BROWSER_HEADERS, timeout=15)
+            snap_url = snap["url"]
+            resp = requests.get(snap_url, headers=BROWSER_HEADERS, timeout=15)
             if resp.status_code == 200 and _has_article_content(resp.text):
-                return resp.text
+                return _clean_wayback_html(resp.text)
     except Exception:
         pass
+    return None
 
+
+def _fetch_via_archive_today(url: str) -> str | None:
+    """Try archive.today / archive.ph."""
+    for domain in ("archive.ph", "archive.today", "archive.is"):
+        try:
+            search_url = f"https://{domain}/newest/{url}"
+            resp = requests.get(
+                search_url,
+                headers={
+                    "User-Agent": BROWSER_HEADERS["User-Agent"],
+                    "Accept": "text/html,*/*",
+                },
+                timeout=15,
+                allow_redirects=True,
+            )
+            if resp.status_code == 200 and _has_article_content(resp.text):
+                return resp.text
+        except Exception:
+            continue
+    return None
+
+
+def _fetch_via_google_amp(url: str) -> str | None:
+    """Try to find and fetch an AMP version of the page."""
+    parsed = urlparse(url)
+    base_path = parsed.path.rstrip("/")
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    amp_variants = [
+        f"{base}{base_path}/amp",
+        f"{base}{base_path}?outputType=amp",
+        f"{base}/amp{base_path}",
+    ]
+    for amp_url in amp_variants:
+        try:
+            resp = requests.get(amp_url, headers=BROWSER_HEADERS, timeout=10, allow_redirects=True)
+            if resp.status_code == 200 and _has_article_content(resp.text):
+                return resp.text
+        except Exception:
+            continue
     return None
 
 
@@ -369,6 +465,31 @@ def _extract_site_styles(soup: BeautifulSoup, url: str) -> dict:
     }
 
 
+def _extract_article_fallback(soup: BeautifulSoup) -> tuple[str, str]:
+    """Fallback: extract article from <article> tag or main content area."""
+    # Try <article> tag first
+    article = soup.find("article")
+    if article:
+        text = article.get_text(strip=True)
+        if len(text) > 200:
+            return article.get_text(strip=True)[:80], str(article)
+
+    # Try common content containers
+    for selector in [
+        '[role="main"]', "main",
+        ".article-body", ".story-body", ".post-content",
+        ".entry-content", ".article-content", ".article__body",
+        "#article-body", "#story-body",
+    ]:
+        el = soup.select_one(selector)
+        if el:
+            text = el.get_text(strip=True)
+            if len(text) > 200:
+                return text[:80], str(el)
+
+    return "", ""
+
+
 def _clean_article(html: str, url: str) -> dict:
     """Extract article with readability and collect site style info."""
     full_soup = BeautifulSoup(html, "lxml")
@@ -379,6 +500,24 @@ def _clean_article(html: str, url: str) -> dict:
     content_html = doc.summary()
 
     soup = BeautifulSoup(content_html, "lxml")
+    article_text = soup.get_text(strip=True)
+
+    # If readability gave us too little, try fallback extraction
+    if len(article_text) < 200:
+        fallback_title, fallback_html = _extract_article_fallback(full_soup)
+        if fallback_html:
+            content_html = fallback_html
+            soup = BeautifulSoup(content_html, "lxml")
+            if not title or len(title) < 5:
+                title = fallback_title
+
+    # If we still don't have a good title, try meta tags
+    if not title or len(title) < 5:
+        og_title = full_soup.find("meta", property="og:title")
+        if og_title and og_title.get("content"):
+            title = og_title["content"].strip()
+        elif full_soup.title:
+            title = full_soup.title.get_text(strip=True)
 
     parsed = urlparse(url)
     base_url = f"{parsed.scheme}://{parsed.netloc}"
@@ -409,20 +548,58 @@ def _clean_article(html: str, url: str) -> dict:
 
 
 def _fetch_article_html(url: str) -> str | None:
-    """Try multiple strategies to fetch article HTML."""
-    html = _try_fetch(url, BROWSER_HEADERS)
-    if not html:
-        html = _try_fetch(url, GOOGLEBOT_HEADERS)
-    if not html:
-        html = _fetch_via_archive(url)
-    if not html:
-        try:
-            resp = requests.get(url, headers=BROWSER_HEADERS, timeout=15, allow_redirects=True)
-            if resp.status_code == 200 and len(resp.text) > 200:
-                html = resp.text
-        except Exception:
-            pass
-    return html
+    """Try multiple strategies to fetch article HTML, from fastest to slowest."""
+    clean = _clean_url(url)
+
+    # 1. Direct fetch with browser-like headers + Google referer
+    html = _try_fetch(clean, BROWSER_HEADERS)
+    if html:
+        return html
+
+    # 2. Pretend to be Googlebot (many paywalls let Google through for SEO)
+    html = _try_fetch(clean, GOOGLEBOT_HEADERS)
+    if html:
+        return html
+
+    # 3. Facebook external hit (sites serve full OG content to Facebook)
+    html = _try_fetch(clean, FACEBOOK_HEADERS)
+    if html:
+        return html
+
+    # 4. Google referrer + X-Forwarded-For trick
+    html = _try_fetch(clean, GOOGLE_REFERRER_HEADERS)
+    if html:
+        return html
+
+    # 5. Google AMP version (many news sites have one)
+    html = _fetch_via_google_amp(clean)
+    if html:
+        return html
+
+    # 6. Google cache
+    html = _fetch_via_google_cache(clean)
+    if html:
+        return html
+
+    # 7. archive.today (often has paywalled content)
+    html = _fetch_via_archive_today(clean)
+    if html:
+        return html
+
+    # 8. Wayback Machine
+    html = _fetch_via_archive_org(clean)
+    if html:
+        return html
+
+    # 9. Last resort: accept whatever we get even if short
+    try:
+        resp = requests.get(clean, headers=BROWSER_HEADERS, timeout=15, allow_redirects=True)
+        if resp.status_code == 200 and len(resp.text) > 200:
+            return resp.text
+    except Exception:
+        pass
+
+    return None
 
 
 @app.route("/api/paywall/read", methods=["POST"])
