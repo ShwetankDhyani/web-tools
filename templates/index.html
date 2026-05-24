@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}WebTools – Free Online Utilities{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <h1>Your Everyday <span class="gradient-text">Web Toolkit</span></h1>
+  <p class="hero-sub">Free, fast, and private. No sign-ups. No tracking.</p>
+</section>
+
+<section class="tools-grid">
+  <a href="/video-downloader" class="tool-card">
+    <div class="tool-icon">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="23 7 16 12 23 17 23 7"/>
+        <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+      </svg>
+    </div>
+    <h2>Video Downloader</h2>
+    <p>Download videos from YouTube, Vimeo, Twitter, Reddit, and hundreds of other sites. Choose quality and format.</p>
+    <span class="tool-cta">Try it &rarr;</span>
+  </a>
+
+  <a href="/paywall-remover" class="tool-card">
+    <div class="tool-icon">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+        <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+      </svg>
+    </div>
+    <h2>Paywall Remover</h2>
+    <p>Read articles behind paywalls. We fetch the original content and present it in a clean, distraction-free format.</p>
+    <span class="tool-cta">Try it &rarr;</span>
+  </a>
+</section>
+
+<section class="features">
+  <div class="feature">
+    <h3>100% Free</h3>
+    <p>No premium tiers, no hidden fees. Every tool is free to use, always.</p>
+  </div>
+  <div class="feature">
+    <h3>Privacy First</h3>
+    <p>We don't store your data. No accounts, no cookies, no tracking scripts.</p>
+  </div>
+  <div class="feature">
+    <h3>Open Source</h3>
+    <p>Inspect, fork, and contribute. Transparency builds trust.</p>
+  </div>
+</section>
+{% endblock %}

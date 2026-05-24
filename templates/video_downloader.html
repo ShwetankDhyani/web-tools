@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Video Downloader – WebTools{% endblock %}
+
+{% block content %}
+<section class="tool-page">
+  <h1>Video Downloader</h1>
+  <p class="tool-desc">Paste any video URL and download it instantly. Supports YouTube, Vimeo, Twitter, Reddit, TikTok, and 1000+ sites.</p>
+
+  <div class="input-group">
+    <input type="url" id="videoUrl" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off" />
+    <button id="fetchInfoBtn" class="btn-primary">Fetch Video</button>
+  </div>
+
+  <!-- Info panel (hidden initially) -->
+  <div id="videoInfo" class="video-info hidden">
+    <img id="videoThumb" src="" alt="Thumbnail" class="video-thumb" />
+    <div class="video-meta">
+      <h3 id="videoTitle"></h3>
+      <p id="videoDuration"></p>
+      <div class="quality-select">
+        <label for="qualitySelect">Quality:</label>
+        <select id="qualitySelect">
+          <option value="best">Best Available</option>
+        </select>
+      </div>
+      <button id="downloadBtn" class="btn-primary">Download</button>
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div id="progressSection" class="progress-section hidden">
+    <div class="progress-bar-container">
+      <div id="progressBar" class="progress-bar" style="width:0%"></div>
+    </div>
+    <p id="progressText">Starting...</p>
+  </div>
+
+  <!-- Download ready -->
+  <div id="doneSection" class="done-section hidden">
+    <p>Your video is ready!</p>
+    <a id="downloadLink" class="btn-primary" href="#" download>Save File</a>
+  </div>
+
+  <!-- Error -->
+  <div id="errorSection" class="error-section hidden">
+    <p id="errorText"></p>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/video_downloader.js"></script>
+{% endblock %}

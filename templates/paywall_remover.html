@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Paywall Remover – WebTools{% endblock %}
+
+{% block content %}
+<section class="tool-page">
+  <h1>Paywall Remover</h1>
+  <p class="tool-desc">Paste the URL of a paywalled article and read it for free in a clean, distraction-free format.</p>
+
+  <div class="input-group">
+    <input type="url" id="articleUrl" placeholder="https://www.nytimes.com/2025/..." autocomplete="off" />
+    <button id="readBtn" class="btn-primary">Read Article</button>
+  </div>
+
+  <!-- Loading -->
+  <div id="loadingSection" class="loading-section hidden">
+    <div class="spinner"></div>
+    <p>Fetching article content&hellip;</p>
+  </div>
+
+  <!-- Article -->
+  <div id="articleSection" class="article-section hidden">
+    <div class="article-header">
+      <h2 id="articleTitle"></h2>
+      <a id="articleSource" href="#" target="_blank" rel="noopener" class="source-link">View original</a>
+    </div>
+    <div id="articleContent" class="article-body"></div>
+  </div>
+
+  <!-- Error -->
+  <div id="errorSection" class="error-section hidden">
+    <p id="errorText"></p>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/paywall_remover.js"></script>
+{% endblock %}
