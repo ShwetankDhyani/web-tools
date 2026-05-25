@@ -75,7 +75,8 @@ def _init_db():
             id INTEGER PRIMARY KEY CHECK (id = 1),
             phone TEXT NOT NULL DEFAULT '',
             api_key TEXT NOT NULL DEFAULT '',
-            enabled INTEGER NOT NULL DEFAULT 0
+            enabled INTEGER NOT NULL DEFAULT 0,
+            platform TEXT NOT NULL DEFAULT 'whatsapp'
         );
     """)
     conn.commit()
@@ -699,13 +700,15 @@ def _send_price_alert(product: dict, new_price: float):
 
 
 def _send_whatsapp_alert(product: dict, new_price: float):
-    """Send a WhatsApp alert via CallMeBot."""
+    """Send a WhatsApp or Telegram alert via CallMeBot."""
     conn = _get_db()
     config = conn.execute("SELECT * FROM whatsapp_config WHERE id = 1").fetchone()
     conn.close()
 
-    if not config or not config["phone"] or not config["api_key"] or not config["enabled"]:
+    if not config or not config["api_key"] or not config["enabled"]:
         return False
+
+    platform = config.get("platform", "whatsapp") if isinstance(config, dict) else (config["platform"] if "platform" in config.keys() else "whatsapp")
 
     text = (
         f"📉 *Price Drop Alert!*\n\n"
@@ -717,12 +720,19 @@ def _send_whatsapp_alert(product: dict, new_price: float):
     )
 
     try:
-        api_url = (
-            f"https://api.callmebot.com/whatsapp.php"
-            f"?phone={urllib.parse.quote(config['phone'])}"
-            f"&text={urllib.parse.quote(text)}"
-            f"&apikey={urllib.parse.quote(config['api_key'])}"
-        )
+        if platform == "telegram":
+            api_url = (
+                f"https://api.callmebot.com/text.php"
+                f"?user=@{urllib.parse.quote(config['phone'])}"
+                f"&text={urllib.parse.quote(text)}"
+            )
+        else:
+            api_url = (
+                f"https://api.callmebot.com/whatsapp.php"
+                f"?phone={urllib.parse.quote(config['phone'])}"
+                f"&text={urllib.parse.quote(text)}"
+                f"&apikey={urllib.parse.quote(config['api_key'])}"
+            )
         resp = requests.get(api_url, timeout=15)
         return resp.status_code == 200
     except Exception:
@@ -904,34 +914,39 @@ def price_email_config():
 
 @app.route("/api/price/whatsapp-config", methods=["GET", "POST"])
 def price_whatsapp_config():
-    """Get or set WhatsApp (CallMeBot) configuration."""
+    """Get or set WhatsApp/Telegram (CallMeBot) configuration."""
     conn = _get_db()
 
     if request.method == "GET":
         config = conn.execute("SELECT * FROM whatsapp_config WHERE id = 1").fetchone()
         conn.close()
         if not config:
-            return jsonify({"phone": "", "enabled": False, "configured": False})
+            return jsonify({"phone": "", "enabled": False, "configured": False, "platform": "whatsapp"})
+        platform = config["platform"] if "platform" in config.keys() else "whatsapp"
         return jsonify({
             "phone": config["phone"],
             "enabled": bool(config["enabled"]),
             "configured": bool(config["phone"] and config["api_key"]),
+            "platform": platform,
         })
 
     data = request.get_json(force=True)
     conn.execute("DELETE FROM whatsapp_config")
     conn.execute(
-        """INSERT INTO whatsapp_config (id, phone, api_key, enabled)
-           VALUES (1, ?, ?, ?)""",
+        """INSERT INTO whatsapp_config (id, phone, api_key, enabled, platform)
+           VALUES (1, ?, ?, ?, ?)""",
         (
             data.get("phone", ""),
             data.get("api_key", ""),
             1 if data.get("enabled", True) else 0,
+            data.get("platform", "whatsapp"),
         ),
     )
     conn.commit()
     conn.close()
-    return jsonify({"ok": True, "message": "WhatsApp configuration saved."})
+    platform = data.get("platform", "whatsapp")
+    label = "Telegram" if platform == "telegram" else "WhatsApp"
+    return jsonify({"ok": True, "message": f"{label} configuration saved."})
 
 
 # ---------------------------------------------------------------------------

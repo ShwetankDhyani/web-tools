@@ -115,13 +115,15 @@ def _send_price_alert(product: dict, new_price: float) -> bool:
 # ---------------------------------------------------------------------------
 
 def _send_whatsapp_alert(product: dict, new_price: float) -> bool:
-    """Send a WhatsApp alert via CallMeBot."""
+    """Send a WhatsApp or Telegram alert via CallMeBot."""
     conn = _get_db()
     config = conn.execute("SELECT * FROM whatsapp_config WHERE id = 1").fetchone()
     conn.close()
 
-    if not config or not config["phone"] or not config["api_key"] or not config["enabled"]:
+    if not config or not config["api_key"] or not config["enabled"]:
         return False
+
+    platform = config["platform"] if "platform" in config.keys() else "whatsapp"
 
     text = (
         f"\U0001f4c9 *Price Drop Alert!*\n\n"
@@ -133,21 +135,28 @@ def _send_whatsapp_alert(product: dict, new_price: float) -> bool:
     )
 
     try:
-        api_url = (
-            f"https://api.callmebot.com/whatsapp.php"
-            f"?phone={urllib.parse.quote(config['phone'])}"
-            f"&text={urllib.parse.quote(text)}"
-            f"&apikey={urllib.parse.quote(config['api_key'])}"
-        )
+        if platform == "telegram":
+            api_url = (
+                f"https://api.callmebot.com/text.php"
+                f"?user=@{urllib.parse.quote(config['phone'])}"
+                f"&text={urllib.parse.quote(text)}"
+            )
+        else:
+            api_url = (
+                f"https://api.callmebot.com/whatsapp.php"
+                f"?phone={urllib.parse.quote(config['phone'])}"
+                f"&text={urllib.parse.quote(text)}"
+                f"&apikey={urllib.parse.quote(config['api_key'])}"
+            )
         resp = requests.get(api_url, timeout=15)
         if resp.status_code == 200:
-            logger.info("WhatsApp alert sent to %s for '%s'", config["phone"], product.get("name"))
+            logger.info("%s alert sent to %s for '%s'", platform.title(), config["phone"], product.get("name"))
             return True
         else:
-            logger.warning("WhatsApp API returned status %d", resp.status_code)
+            logger.warning("%s API returned status %d", platform.title(), resp.status_code)
             return False
     except Exception as e:
-        logger.error("Failed to send WhatsApp alert: %s", e)
+        logger.error("Failed to send %s alert: %s", platform, e)
         return False
 
 

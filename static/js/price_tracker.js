@@ -71,18 +71,43 @@ function toggleWhatsAppConfig() {
   el.classList.toggle("hidden");
 }
 
+function switchPlatform(platform) {
+  document.getElementById("waPlatform").value = platform;
+  document.getElementById("tabWhatsApp").classList.toggle("active", platform === "whatsapp");
+  document.getElementById("tabTelegram").classList.toggle("active", platform === "telegram");
+  document.getElementById("whatsappSetup").classList.toggle("hidden", platform !== "whatsapp");
+  document.getElementById("telegramSetup").classList.toggle("hidden", platform !== "telegram");
+
+  const phoneLabel = document.getElementById("waPhoneLabel");
+  const phoneInput = document.getElementById("waPhone");
+  const apiKeyField = document.getElementById("waApiKey").closest(".config-field");
+
+  if (platform === "telegram") {
+    phoneLabel.textContent = "Telegram Username (without @)";
+    phoneInput.placeholder = "your_username";
+    apiKeyField.style.display = "none";
+  } else {
+    phoneLabel.textContent = "Phone Number (with country code)";
+    phoneInput.placeholder = "+919876543210";
+    apiKeyField.style.display = "";
+  }
+}
+
 function saveWhatsAppConfig() {
   const btn = document.getElementById("saveWhatsAppBtn");
   btn.disabled = true;
   btn.textContent = "Saving...";
+
+  const platform = document.getElementById("waPlatform").value;
 
   fetch("/api/price/whatsapp-config", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       phone: document.getElementById("waPhone").value,
-      api_key: document.getElementById("waApiKey").value,
+      api_key: document.getElementById("waApiKey").value || "telegram",
       enabled: true,
+      platform: platform,
     }),
   })
     .then((r) => r.json())

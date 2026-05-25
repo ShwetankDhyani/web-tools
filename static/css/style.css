@@ -459,6 +459,38 @@ img { max-width: 100%; height: auto; }
   font-size: 0.85rem;
 }
 
+.platform-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  width: fit-content;
+}
+.platform-tab {
+  padding: 0.55rem 1.25rem;
+  border: none;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.platform-tab:not(:last-child) {
+  border-right: 1px solid var(--border);
+}
+.platform-tab.active {
+  background: var(--primary);
+  color: #fff;
+}
+.platform-tab:hover:not(.active) {
+  background: var(--surface);
+  color: var(--text);
+}
+
 .btn-secondary {
   display: inline-flex;
   align-items: center;
