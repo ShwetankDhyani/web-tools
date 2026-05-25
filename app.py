@@ -166,6 +166,24 @@ def _backfill_check_counts(conn: sqlite3.Connection):
     conn.commit()
 
 
+def _detect_currency(url: str) -> str:
+    """Detect currency symbol from URL domain."""
+    from scraper import currency_from_url
+    return currency_from_url(url)
+
+
+def _fix_product_currencies(conn: sqlite3.Connection):
+    """Correct currency for existing rows based on product URL."""
+    for row in conn.execute("SELECT id, url, currency FROM tracked_products"):
+        expected = _detect_currency(row["url"])
+        if row["currency"] != expected:
+            conn.execute(
+                "UPDATE tracked_products SET currency = ? WHERE id = ?",
+                (expected, row["id"]),
+            )
+    conn.commit()
+
+
 _init_db()
 
 # Admin username (set via env or defaults to first user who logs in)
@@ -958,24 +976,6 @@ def paywall_read():
 
 from price_log import record_price_check
 from scraper import scrape_price as _scrape_price
-
-
-def _detect_currency(url: str) -> str:
-    """Detect currency symbol from URL domain."""
-    from scraper import currency_from_url
-    return currency_from_url(url)
-
-
-def _fix_product_currencies(conn: sqlite3.Connection):
-    """Correct currency for existing rows based on product URL."""
-    for row in conn.execute("SELECT id, url, currency FROM tracked_products"):
-        expected = _detect_currency(row["url"])
-        if row["currency"] != expected:
-            conn.execute(
-                "UPDATE tracked_products SET currency = ? WHERE id = ?",
-                (expected, row["id"]),
-            )
-    conn.commit()
 
 
 def _shorten_url(url: str) -> str:
