@@ -109,6 +109,7 @@ def _init_db():
         ("tracked_products", "error_count", "INTEGER DEFAULT 0"),
         ("tracked_products", "last_error", "TEXT DEFAULT ''"),
         ("tracked_products", "check_interval", "INTEGER NOT NULL DEFAULT 3"),
+        ("tracked_products", "check_count", "INTEGER NOT NULL DEFAULT 0"),
     ]
     for table, column, col_type in migrations:
         try:
@@ -117,7 +118,28 @@ def _init_db():
         except sqlite3.OperationalError:
             pass  # Column already exists
 
+    _backfill_check_counts(conn)
     conn.close()
+
+
+def _backfill_check_counts(conn: sqlite3.Connection):
+    """Estimate check_count for products checked before logging existed."""
+    rows = conn.execute(
+        "SELECT id, price_history, last_checked, check_count FROM tracked_products"
+    ).fetchall()
+    for row in rows:
+        if row["check_count"] and row["check_count"] > 0:
+            continue
+        history = json.loads(row["price_history"] or "[]")
+        estimated = len(history)
+        if row["last_checked"] and estimated < 1:
+            estimated = 1
+        if estimated > 0:
+            conn.execute(
+                "UPDATE tracked_products SET check_count = ? WHERE id = ?",
+                (estimated, row["id"]),
+            )
+    conn.commit()
 
 
 _init_db()
@@ -908,7 +930,7 @@ def paywall_read():
 # API – Price Tracker
 # ---------------------------------------------------------------------------
 
-from price_log import log_check_run
+from price_log import record_price_check
 from scraper import scrape_price as _scrape_price
 
 
@@ -1016,16 +1038,16 @@ def price_track():
             now, now, json.dumps(history), check_interval,
         ),
     )
-    conn.commit()
-    conn.close()
-
-    log_check_run(
+    record_price_check(
         product_id,
         current_price is not None,
         price=current_price,
         error=None if current_price is not None else "Could not fetch price on add",
         source="initial",
+        conn=conn,
     )
+    conn.commit()
+    conn.close()
 
     # If already below target, send alert immediately
     if current_price is not None and current_price <= target_price:
@@ -1143,11 +1165,11 @@ def price_check_now(product_id: str):
                WHERE id = ?""",
             (error_count, f"Manual check failed at {now}", now, product_id),
         )
+        record_price_check(
+            product_id, False, error="Could not fetch current price", source="manual", conn=conn
+        )
         conn.commit()
         conn.close()
-        log_check_run(
-            product_id, False, error="Could not fetch current price", source="manual"
-        )
         return jsonify({"error": "Could not fetch current price"}), 502
 
     history = json.loads(product["price_history"] or "[]")
@@ -1161,7 +1183,7 @@ def price_check_now(product_id: str):
            WHERE id = ?""",
         (new_price, now, json.dumps(history), product_id),
     )
-    log_check_run(product_id, True, price=new_price, source="manual")
+    record_price_check(product_id, True, price=new_price, source="manual", conn=conn)
 
     notified = False
     if new_price <= product["target_price"] and not product["notified"]:
@@ -1215,13 +1237,18 @@ def price_tracker_status():
     last_checked_row = conn.execute(
         "SELECT last_checked FROM tracked_products ORDER BY last_checked DESC LIMIT 1"
     ).fetchone()
-    check_stats = conn.execute(
-        """SELECT
-             COUNT(*) AS total,
-             COALESCE(SUM(success), 0) AS successful,
-             COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS failed
-           FROM check_runs"""
-    ).fetchone()
+    check_total = conn.execute(
+        "SELECT COALESCE(SUM(check_count), 0) FROM tracked_products"
+    ).fetchone()[0]
+    try:
+        check_stats = conn.execute(
+            """SELECT
+                 COALESCE(SUM(success), 0) AS successful,
+                 COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS failed
+               FROM check_runs"""
+        ).fetchone()
+    except sqlite3.OperationalError:
+        check_stats = {"successful": 0, "failed": 0}
     conn.close()
 
     return jsonify({
@@ -1232,7 +1259,7 @@ def price_tracker_status():
         "total_users": user_count,
         "last_checked": last_checked_row["last_checked"] if last_checked_row else None,
         "check_runs": {
-            "total": check_stats["total"] or 0,
+            "total": check_total or 0,
             "successful": check_stats["successful"] or 0,
             "failed": check_stats["failed"] or 0,
         },
@@ -1246,7 +1273,7 @@ def admin_products():
     conn = _get_db()
     rows = conn.execute(
         """SELECT p.*,
-                  (SELECT COUNT(*) FROM check_runs c WHERE c.product_id = p.id) AS check_total,
+                  COALESCE(p.check_count, 0) AS check_total,
                   (SELECT COUNT(*) FROM check_runs c WHERE c.product_id = p.id AND c.success = 1) AS check_success,
                   (SELECT COUNT(*) FROM check_runs c WHERE c.product_id = p.id AND c.success = 0) AS check_failed
            FROM tracked_products p

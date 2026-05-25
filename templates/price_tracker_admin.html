@@ -247,11 +247,14 @@ function renderAdminRow(p) {
     status = '<span class="badge badge-tracking">Tracking</span>';
   }
 
-  const total = p.check_total || 0;
+  const total = p.check_total ?? p.check_count ?? 0;
   const ok = p.check_success || 0;
   const fail = p.check_failed || 0;
+  const logged = ok + fail;
   const checksCell = total > 0
-    ? `<span class="check-stats" title="${ok} succeeded, ${fail} failed">${total} <span class="check-ok">${ok}✓</span> <span class="check-fail">${fail}✗</span></span>`
+    ? (logged > 0
+      ? `<span class="check-stats" title="${ok} succeeded, ${fail} failed">${total} <span class="check-ok">${ok}✓</span> <span class="check-fail">${fail}✗</span></span>`
+      : `<span class="check-stats" title="${total} total checks">${total}</span>`)
     : '<span class="no-errors">0</span>';
 
   const errorCell = p.error_count > 0

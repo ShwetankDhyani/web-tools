@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from price_log import log_check_run
+from price_log import record_price_check
 from scraper import scrape_price
 
 # ---------------------------------------------------------------------------
@@ -175,9 +175,11 @@ def check_all_prices():
                    WHERE id = ?""",
                 (error_count, err_msg, now, product["id"]),
             )
+            record_price_check(
+                product["id"], False, error=err_msg, source="cron", conn=conn
+            )
             conn.commit()
             conn.close()
-            log_check_run(product["id"], False, error=err_msg, source="cron")
             if i < len(due) - 1:
                 time.sleep(random.uniform(1.0, 4.0))
             continue
@@ -193,7 +195,9 @@ def check_all_prices():
                WHERE id = ?""",
             (new_price, now, json.dumps(history), product["id"]),
         )
-        log_check_run(product["id"], True, price=new_price, source="cron")
+        record_price_check(
+            product["id"], True, price=new_price, source="cron", conn=conn
+        )
 
         if new_price <= product["target_price"]:
             logger.info("Price %.2f is at or below target %.2f!", new_price, product["target_price"])
