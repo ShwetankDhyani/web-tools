@@ -57,9 +57,10 @@
   </div>
 
   <!-- Recent check activity -->
-  <div class="admin-products">
+  <div class="admin-products admin-section-compact">
     <h3>Recent check activity</h3>
-    <div id="checkHistoryContainer" class="admin-table-responsive">
+    <p class="admin-section-hint">Latest checks — scroll inside the box for older entries.</p>
+    <div id="checkHistoryContainer" class="admin-scroll-panel">
       <p class="admin-empty">Loading...</p>
     </div>
   </div>
@@ -135,7 +136,7 @@ function loadStatus() {
 }
 
 function loadCheckHistory() {
-  fetch("/api/price/admin/check-history?limit=40")
+  fetch("/api/price/admin/check-history?limit=30")
     .then(r => r.json())
     .then(rows => {
       const container = document.getElementById("checkHistoryContainer");

@@ -1078,6 +1078,61 @@ img { max-width: 100%; height: auto; }
   font-size: 1.05rem;
   margin-bottom: 0.75rem;
 }
+.admin-section-compact {
+  margin-bottom: 1rem;
+}
+.admin-section-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: -0.35rem 0 0.5rem;
+}
+.admin-scroll-panel {
+  max-height: 11rem;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.admin-scroll-panel .admin-empty {
+  padding: 0.85rem 1rem;
+  margin: 0;
+  font-size: 0.8rem;
+}
+.admin-scroll-panel .admin-table {
+  margin: 0;
+  font-size: 0.78rem;
+}
+.admin-scroll-panel .admin-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-2);
+  box-shadow: 0 1px 0 var(--border);
+  padding: 0.4rem 0.45rem;
+  font-size: 0.68rem;
+}
+.admin-scroll-panel .admin-table-compact td {
+  padding: 0.35rem 0.45rem;
+  vertical-align: middle;
+}
+.admin-scroll-panel .admin-product-name {
+  max-width: 9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.78rem;
+  margin-bottom: 0;
+}
+.admin-scroll-panel .check-detail {
+  max-width: 7rem;
+  font-size: 0.75rem;
+}
+.admin-scroll-panel .badge {
+  font-size: 0.65rem;
+  padding: 0.15rem 0.4rem;
+}
+
 .admin-table-responsive {
   width: 100%;
 }
@@ -1840,7 +1895,14 @@ img { max-width: 100%; height: auto; }
   }
   .check-rate { display: block; word-break: break-word; }
 
-  /* Admin tables → stacked cards on small screens */
+  .admin-scroll-panel {
+    max-height: 10rem;
+  }
+  .admin-scroll-panel .admin-table {
+    min-width: 32rem;
+  }
+
+  /* Admin tables → stacked cards on small screens (not scroll panels) */
   .admin-table-responsive .admin-table thead {
     display: none;
   }
