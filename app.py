@@ -56,6 +56,7 @@ def _init_db():
             name TEXT,
             current_price REAL,
             target_price REAL NOT NULL,
+            currency TEXT NOT NULL DEFAULT '$',
             last_checked TEXT,
             notified INTEGER DEFAULT 0,
             created_at TEXT NOT NULL,
@@ -646,6 +647,20 @@ def paywall_read():
 from scraper import scrape_price as _scrape_price
 
 
+def _detect_currency(url: str) -> str:
+    """Detect currency symbol from URL domain."""
+    domain = urlparse(url).netloc.lower()
+    if domain.endswith(".in") or "amazon.in" in domain or "flipkart" in domain:
+        return "₹"
+    if domain.endswith(".co.uk") or domain.endswith(".uk"):
+        return "£"
+    if domain.endswith(".eu") or domain.endswith(".de") or domain.endswith(".fr") or domain.endswith(".it") or domain.endswith(".es"):
+        return "€"
+    if domain.endswith(".co.jp") or domain.endswith(".jp"):
+        return "¥"
+    return "$"
+
+
 def _shorten_url(url: str) -> str:
     """Shorten a product URL for messaging (keep domain + short path)."""
     try:
@@ -668,12 +683,13 @@ def _send_telegram_alert(product: dict, new_price: float):
         logger.info("Telegram not configured — skipping")
         return False
 
+    cur = product.get("currency", "$")
     short_url = _shorten_url(product['url'])
     text = (
         f"Price Drop Alert!\n\n"
         f"{product['name'] or 'Product'}\n"
-        f"Current price: ${new_price:.2f}\n"
-        f"Your target: ${product['target_price']:.2f}\n\n"
+        f"Current price: {cur}{new_price:,.2f}\n"
+        f"Your target: {cur}{product['target_price']:,.2f}\n\n"
         f"{short_url}\n\n"
         f"- WebTools.wiki Price Tracker"
     )
@@ -716,6 +732,7 @@ def price_track():
 
     # Scrape current price
     name, current_price = _scrape_price(url)
+    currency = _detect_currency(url)
 
     product_id = uuid.uuid4().hex[:12]
     now = datetime.now(timezone.utc).isoformat()
@@ -726,9 +743,9 @@ def price_track():
     conn = _get_db()
     conn.execute(
         """INSERT INTO tracked_products
-           (id, url, name, current_price, target_price, last_checked, created_at, price_history)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (product_id, url, name, current_price, target_price, now, now, json.dumps(history)),
+           (id, url, name, current_price, target_price, currency, last_checked, created_at, price_history)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (product_id, url, name, current_price, target_price, currency, now, now, json.dumps(history)),
     )
     conn.commit()
     conn.close()
@@ -750,6 +767,7 @@ def price_track():
         "name": name,
         "current_price": current_price,
         "target_price": target_price,
+        "currency": currency,
         "message": "Product is now being tracked!",
         "already_below": current_price is not None and current_price <= target_price,
     })

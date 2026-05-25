@@ -281,23 +281,33 @@ def _parse_amazon(soup: BeautifulSoup) -> tuple[str | None, float | None]:
     if title_el:
         name = title_el.get_text(strip=True)
 
-    # Try multiple Amazon price selectors
-    for selector_fn in [
-        lambda: soup.find("span", class_="a-price-whole"),
-        lambda: soup.find("span", id="priceblock_ourprice"),
-        lambda: soup.find("span", id="priceblock_dealprice"),
-        lambda: soup.find("span", id="tp_price_block_total_price_ww"),
-        lambda: soup.select_one("span.a-price span.a-offscreen"),
-        lambda: soup.find("span", class_="a-offscreen"),
-    ]:
-        try:
-            el = selector_fn()
-            if el:
-                price = parse_price(el.get_text())
+    # Priority 1: core price container (most reliable on modern Amazon pages)
+    for container_id in ("corePrice_feature_div", "corePriceDisplay_desktop_feature_div"):
+        container = soup.find(id=container_id)
+        if container:
+            core_el = container.select_one("span.a-price.apex-core-price-identifier span.a-offscreen")
+            if not core_el:
+                core_el = container.select_one("span.a-price span.a-offscreen")
+            if core_el:
+                price = parse_price(core_el.get_text())
                 if price is not None:
-                    break
-        except Exception:
-            continue
+                    return name, price
+
+    # Priority 2: specific price block IDs
+    for pid in ("tp_price_block_total_price_ww", "priceblock_ourprice", "priceblock_dealprice"):
+        el = soup.find(id=pid)
+        if el:
+            offscreen = el.find("span", class_="a-offscreen")
+            price = parse_price((offscreen or el).get_text())
+            if price is not None:
+                return name, price
+
+    # Priority 3: apex price identifier class (deal/sale price)
+    apex_price = soup.select_one("span.a-price.apex-core-price-identifier span.a-offscreen")
+    if apex_price:
+        price = parse_price(apex_price.get_text())
+        if price is not None:
+            return name, price
 
     return name, price
 

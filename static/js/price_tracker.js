@@ -119,9 +119,10 @@ function trackProduct() {
       }
 
       status.classList.remove("hidden");
+      const cur = data.currency || "$";
       let msg = `<strong>${data.name || "Product"}</strong> is now being tracked.`;
       if (data.current_price !== null) {
-        msg += ` Current price: <strong>$${data.current_price.toFixed(2)}</strong>.`;
+        msg += ` Current price: <strong>${cur}${data.current_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>.`;
       } else {
         msg += " Could not detect the current price — we'll keep checking.";
       }
@@ -170,8 +171,9 @@ function renderProduct(p) {
       ? "price-below"
       : "price-above";
 
+  const cur = p.currency || "$";
   const priceDisplay =
-    p.current_price !== null ? `$${p.current_price.toFixed(2)}` : "—";
+    p.current_price !== null ? `${cur}${p.current_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : "—";
 
   const lastChecked = p.last_checked
     ? timeAgo(new Date(p.last_checked))
@@ -215,9 +217,9 @@ function renderProduct(p) {
       : null;
   const savingsHtml =
     savings !== null && parseFloat(savings) > 0
-      ? `<span class="price-diff">$${savings} above target</span>`
+      ? `<span class="price-diff">${cur}${parseFloat(savings).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} above target</span>`
       : savings !== null && parseFloat(savings) <= 0
-        ? `<span class="price-diff price-diff-good">$${Math.abs(parseFloat(savings)).toFixed(2)} below target</span>`
+        ? `<span class="price-diff price-diff-good">${cur}${Math.abs(parseFloat(savings)).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} below target</span>`
         : "";
 
   return `
@@ -235,7 +237,7 @@ function renderProduct(p) {
           </div>
           <div class="price-item">
             <span class="price-label">Target</span>
-            <span class="price-value">$${p.target_price.toFixed(2)}</span>
+            <span class="price-value">${cur}${p.target_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
           </div>
           <div class="price-item price-item-info">
             ${savingsHtml}
@@ -296,7 +298,8 @@ function checkNow(productId, btn) {
       if (data.below_target) {
         const status = document.getElementById("trackStatus");
         status.classList.remove("hidden");
-        status.innerHTML = `<span class="price-alert">Price dropped to $${data.current_price.toFixed(2)} — below your target of $${data.target_price.toFixed(2)}!</span>`;
+        const c = data.currency || "$";
+        status.innerHTML = `<span class="price-alert">Price dropped to ${c}${data.current_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} — below your target of ${c}${data.target_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}!</span>`;
       }
     })
     .catch(() => {

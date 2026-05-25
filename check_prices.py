@@ -78,12 +78,13 @@ def _send_telegram_alert(product: dict, new_price: float) -> bool:
         logger.info("Telegram not configured — skipping")
         return False
 
+    cur = product.get("currency", "$")
     short_url = _shorten_url(product['url'])
     text = (
         f"Price Drop Alert!\n\n"
         f"{product['name'] or 'Product'}\n"
-        f"Current price: ${new_price:.2f}\n"
-        f"Your target: ${product['target_price']:.2f}\n\n"
+        f"Current price: {cur}{new_price:,.2f}\n"
+        f"Your target: {cur}{product['target_price']:,.2f}\n\n"
         f"{short_url}\n\n"
         f"- WebTools.wiki Price Tracker"
     )
