@@ -120,18 +120,19 @@ def _send_whatsapp_alert(product: dict, new_price: float) -> bool:
     config = conn.execute("SELECT * FROM whatsapp_config WHERE id = 1").fetchone()
     conn.close()
 
-    if not config or not config["api_key"] or not config["enabled"]:
+    if not config or not config["enabled"]:
+        logger.info("WhatsApp/Telegram not configured or disabled")
         return False
 
     platform = config["platform"] if "platform" in config.keys() else "whatsapp"
 
     text = (
-        f"\U0001f4c9 *Price Drop Alert!*\n\n"
-        f"*{product['name'] or 'Product'}*\n"
-        f"Current price: *${new_price:.2f}*\n"
+        f"Price Drop Alert!\n\n"
+        f"{product['name'] or 'Product'}\n"
+        f"Current price: ${new_price:.2f}\n"
         f"Your target: ${product['target_price']:.2f}\n\n"
         f"{product['url']}\n\n"
-        f"\u2014 WebTools.wiki Price Tracker"
+        f"- WebTools.wiki Price Tracker"
     )
 
     try:
@@ -148,13 +149,14 @@ def _send_whatsapp_alert(product: dict, new_price: float) -> bool:
                 f"&text={urllib.parse.quote(text)}"
                 f"&apikey={urllib.parse.quote(config['api_key'])}"
             )
+        logger.info("Sending %s alert to %s for '%s'", platform, config["phone"], product.get("name"))
         resp = requests.get(api_url, timeout=15)
-        if resp.status_code == 200:
-            logger.info("%s alert sent to %s for '%s'", platform.title(), config["phone"], product.get("name"))
-            return True
-        else:
-            logger.warning("%s API returned status %d", platform.title(), resp.status_code)
+        body = resp.text.lower()
+        if "error" in body or "permission denied" in body:
+            logger.error("%s API error: %s", platform.title(), resp.text[:200])
             return False
+        logger.info("%s alert sent successfully", platform.title())
+        return True
     except Exception as e:
         logger.error("Failed to send %s alert: %s", platform, e)
         return False
@@ -205,8 +207,8 @@ def check_all_prices():
         if new_price <= product["target_price"]:
             logger.info("Price %.2f is at or below target %.2f!", new_price, product["target_price"])
             email_sent = _send_price_alert(product, new_price)
-            _send_whatsapp_alert(product, new_price)
-            if email_sent:
+            msg_sent = _send_whatsapp_alert(product, new_price)
+            if email_sent or msg_sent:
                 conn.execute(
                     "UPDATE tracked_products SET notified = 1 WHERE id = ?",
                     (product["id"],),

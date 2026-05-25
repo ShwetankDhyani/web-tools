@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import smtplib
@@ -15,6 +16,8 @@ from urllib.parse import urlparse
 import requests
 import urllib.parse
 from bs4 import BeautifulSoup
+
+logger = logging.getLogger(__name__)
 from flask import (
     Flask,
     Response,
@@ -694,8 +697,10 @@ def _send_price_alert(product: dict, new_price: float):
             server.starttls()
             server.login(config["smtp_user"], config["smtp_pass"])
             server.sendmail(config["smtp_user"], product["email"], msg.as_string())
+        logger.info("Email alert sent to %s", product["email"])
         return True
-    except Exception:
+    except Exception as e:
+        logger.error("Email send failed: %s", e)
         return False
 
 
@@ -705,18 +710,19 @@ def _send_whatsapp_alert(product: dict, new_price: float):
     config = conn.execute("SELECT * FROM whatsapp_config WHERE id = 1").fetchone()
     conn.close()
 
-    if not config or not config["api_key"] or not config["enabled"]:
+    if not config or not config["enabled"]:
+        logger.info("WhatsApp/Telegram not configured or disabled — skipping")
         return False
 
-    platform = config.get("platform", "whatsapp") if isinstance(config, dict) else (config["platform"] if "platform" in config.keys() else "whatsapp")
+    platform = config["platform"] if "platform" in config.keys() else "whatsapp"
 
     text = (
-        f"📉 *Price Drop Alert!*\n\n"
-        f"*{product['name'] or 'Product'}*\n"
-        f"Current price: *${new_price:.2f}*\n"
+        f"Price Drop Alert!\n\n"
+        f"{product['name'] or 'Product'}\n"
+        f"Current price: ${new_price:.2f}\n"
         f"Your target: ${product['target_price']:.2f}\n\n"
         f"{product['url']}\n\n"
-        f"— WebTools.wiki Price Tracker"
+        f"- WebTools.wiki Price Tracker"
     )
 
     try:
@@ -733,9 +739,16 @@ def _send_whatsapp_alert(product: dict, new_price: float):
                 f"&text={urllib.parse.quote(text)}"
                 f"&apikey={urllib.parse.quote(config['api_key'])}"
             )
+        logger.info("Sending %s alert to %s", platform, config["phone"])
         resp = requests.get(api_url, timeout=15)
-        return resp.status_code == 200
-    except Exception:
+        body = resp.text.lower()
+        if "error" in body or "permission denied" in body:
+            logger.error("%s API error: %s", platform.title(), resp.text[:200])
+            return False
+        logger.info("%s alert sent successfully (status=%d)", platform.title(), resp.status_code)
+        return True
+    except Exception as e:
+        logger.error("Failed to send %s alert: %s", platform, e)
         return False
 
 
@@ -786,8 +799,8 @@ def price_track():
             "email": email,
         }
         email_sent = _send_price_alert(product, current_price)
-        _send_whatsapp_alert(product, current_price)
-        if email_sent:
+        msg_sent = _send_whatsapp_alert(product, current_price)
+        if email_sent or msg_sent:
             conn = _get_db()
             conn.execute("UPDATE tracked_products SET notified = 1 WHERE id = ?", (product_id,))
             conn.commit()
@@ -862,8 +875,8 @@ def price_check_now(product_id: str):
     notified = False
     if new_price <= product["target_price"] and not product["notified"]:
         email_sent = _send_price_alert(product, new_price)
-        _send_whatsapp_alert(product, new_price)
-        if email_sent:
+        msg_sent = _send_whatsapp_alert(product, new_price)
+        if email_sent or msg_sent:
             conn.execute("UPDATE tracked_products SET notified = 1 WHERE id = ?", (product_id,))
             notified = True
 
@@ -947,6 +960,38 @@ def price_whatsapp_config():
     platform = data.get("platform", "whatsapp")
     label = "Telegram" if platform == "telegram" else "WhatsApp"
     return jsonify({"ok": True, "message": f"{label} configuration saved."})
+
+
+@app.route("/api/price/test-notification", methods=["POST"])
+def test_notification():
+    """Send a test notification to verify config works."""
+    data = request.get_json(force=True)
+    channel = data.get("channel", "all")
+
+    test_product = {
+        "name": "Test Product",
+        "url": "https://example.com/product",
+        "target_price": 50.00,
+        "email": "",
+    }
+    test_price = 42.99
+
+    results = {}
+
+    if channel in ("email", "all"):
+        conn = _get_db()
+        email_cfg = conn.execute("SELECT * FROM email_config WHERE id = 1").fetchone()
+        conn.close()
+        if email_cfg and email_cfg["smtp_user"]:
+            test_product["email"] = email_cfg["smtp_user"]
+            results["email"] = _send_price_alert(test_product, test_price)
+        else:
+            results["email"] = "not_configured"
+
+    if channel in ("messaging", "all"):
+        results["messaging"] = _send_whatsapp_alert(test_product, test_price)
+
+    return jsonify({"results": results})
 
 
 # ---------------------------------------------------------------------------

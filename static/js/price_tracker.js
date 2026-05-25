@@ -63,6 +63,58 @@ function checkWhatsAppConfig() {
       } else {
         banner.classList.add("hidden");
       }
+      updateTestBar();
+    });
+}
+
+function updateTestBar() {
+  Promise.all([
+    fetch("/api/price/email-config").then((r) => r.json()),
+    fetch("/api/price/whatsapp-config").then((r) => r.json()),
+  ]).then(([email, msg]) => {
+    const bar = document.getElementById("testNotifBar");
+    if (email.configured || msg.configured) {
+      bar.classList.remove("hidden");
+    } else {
+      bar.classList.add("hidden");
+    }
+  });
+}
+
+function testNotifications() {
+  const btn = document.getElementById("testNotifBtn");
+  const result = document.getElementById("testNotifResult");
+  btn.disabled = true;
+  btn.textContent = "Sending...";
+  result.textContent = "";
+
+  fetch("/api/price/test-notification", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ channel: "all" }),
+  })
+    .then((r) => r.json())
+    .then((data) => {
+      btn.disabled = false;
+      btn.textContent = "Send Test Alert";
+      const parts = [];
+      if (data.results.email === true) parts.push("Email sent");
+      else if (data.results.email === false) parts.push("Email failed");
+      else if (data.results.email === "not_configured")
+        parts.push("Email not configured");
+      if (data.results.messaging === true) parts.push("Message sent");
+      else if (data.results.messaging === false) parts.push("Message failed");
+      result.textContent = parts.join(" · ") || "No channels configured";
+      result.style.color =
+        data.results.email === true || data.results.messaging === true
+          ? "var(--accent)"
+          : "#e74c3c";
+    })
+    .catch(() => {
+      btn.disabled = false;
+      btn.textContent = "Send Test Alert";
+      result.textContent = "Request failed";
+      result.style.color = "#e74c3c";
     });
 }
 
