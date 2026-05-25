@@ -392,6 +392,46 @@ img { max-width: 100%; height: auto; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---- Price Tracker ---- */
+.notif-settings-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+.notif-status {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.notif-chip {
+  font-size: 0.8rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 20px;
+  background: rgba(255,118,117,0.1);
+  color: var(--danger);
+  border: 1px solid rgba(255,118,117,0.2);
+}
+.notif-chip.configured {
+  background: rgba(0,206,201,0.1);
+  color: var(--accent);
+  border-color: rgba(0,206,201,0.2);
+}
+.notif-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.btn-sm {
+  padding: 0.35rem 0.75rem !important;
+  font-size: 0.8rem !important;
+}
+
 .email-banner {
   padding: 1rem 1.5rem;
   background: rgba(108, 92, 231, 0.1);
@@ -571,9 +611,19 @@ img { max-width: 100%; height: auto; }
 .price-alert { color: var(--accent); font-weight: 600; }
 
 .products-list {
-  margin-top: 2rem;
+  margin-top: 1.5rem;
 }
-.products-list h3 { margin-bottom: 1rem; }
+.products-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.products-header h3 { margin: 0; }
+.product-count {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
 
 .product-card {
   background: var(--surface);
@@ -688,6 +738,27 @@ img { max-width: 100%; height: auto; }
   text-align: center;
   color: var(--text-muted);
   padding: 2rem;
+}
+
+.empty-state-box {
+  text-align: center;
+  padding: 3rem 2rem;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+.empty-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+.empty-state-box h4 { color: var(--text); margin-bottom: 0.5rem; }
+.empty-state-box p { color: var(--text-muted); font-size: 0.9rem; max-width: 400px; margin: 0 auto; }
+
+.price-diff {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+.price-diff-good {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 /* ---- Utility ---- */

@@ -8,18 +8,22 @@ function checkEmailConfig() {
   fetch("/api/price/email-config")
     .then((r) => r.json())
     .then((data) => {
-      const banner = document.getElementById("emailBanner");
-      if (!data.configured) {
-        banner.classList.remove("hidden");
+      const chip = document.getElementById("emailStatusText");
+      if (data.configured) {
+        chip.textContent = data.smtp_user;
+        chip.parentElement.classList.add("configured");
       } else {
-        banner.classList.add("hidden");
+        chip.textContent = "not set";
+        chip.parentElement.classList.remove("configured");
       }
+      updateTestBtn();
     });
 }
 
 function toggleEmailConfig() {
   const el = document.getElementById("emailConfig");
   el.classList.toggle("hidden");
+  document.getElementById("whatsappConfig").classList.add("hidden");
 }
 
 function saveEmailConfig() {
@@ -57,27 +61,28 @@ function checkWhatsAppConfig() {
   fetch("/api/price/whatsapp-config")
     .then((r) => r.json())
     .then((data) => {
-      const banner = document.getElementById("whatsappBanner");
-      if (!data.configured) {
-        banner.classList.remove("hidden");
+      const chip = document.getElementById("msgStatusText");
+      if (data.configured) {
+        const label =
+          data.platform === "telegram" ? "Telegram" : "WhatsApp";
+        chip.textContent = label + ": " + data.phone;
+        chip.parentElement.classList.add("configured");
       } else {
-        banner.classList.add("hidden");
+        chip.textContent = "not set";
+        chip.parentElement.classList.remove("configured");
       }
-      updateTestBar();
+      updateTestBtn();
     });
 }
 
-function updateTestBar() {
+function updateTestBtn() {
   Promise.all([
     fetch("/api/price/email-config").then((r) => r.json()),
     fetch("/api/price/whatsapp-config").then((r) => r.json()),
   ]).then(([email, msg]) => {
-    const bar = document.getElementById("testNotifBar");
-    if (email.configured || msg.configured) {
-      bar.classList.remove("hidden");
-    } else {
-      bar.classList.add("hidden");
-    }
+    const btn = document.getElementById("testNotifBtn");
+    btn.style.display =
+      email.configured || msg.configured ? "inline-flex" : "none";
   });
 }
 
@@ -96,7 +101,7 @@ function testNotifications() {
     .then((r) => r.json())
     .then((data) => {
       btn.disabled = false;
-      btn.textContent = "Send Test Alert";
+      btn.textContent = "Test Alert";
       const parts = [];
       if (data.results.email === true) parts.push("Email sent");
       else if (data.results.email === false) parts.push("Email failed");
@@ -112,7 +117,7 @@ function testNotifications() {
     })
     .catch(() => {
       btn.disabled = false;
-      btn.textContent = "Send Test Alert";
+      btn.textContent = "Test Alert";
       result.textContent = "Request failed";
       result.style.color = "#e74c3c";
     });
@@ -121,18 +126,29 @@ function testNotifications() {
 function toggleWhatsAppConfig() {
   const el = document.getElementById("whatsappConfig");
   el.classList.toggle("hidden");
+  document.getElementById("emailConfig").classList.add("hidden");
 }
 
 function switchPlatform(platform) {
   document.getElementById("waPlatform").value = platform;
-  document.getElementById("tabWhatsApp").classList.toggle("active", platform === "whatsapp");
-  document.getElementById("tabTelegram").classList.toggle("active", platform === "telegram");
-  document.getElementById("whatsappSetup").classList.toggle("hidden", platform !== "whatsapp");
-  document.getElementById("telegramSetup").classList.toggle("hidden", platform !== "telegram");
+  document
+    .getElementById("tabWhatsApp")
+    .classList.toggle("active", platform === "whatsapp");
+  document
+    .getElementById("tabTelegram")
+    .classList.toggle("active", platform === "telegram");
+  document
+    .getElementById("whatsappSetup")
+    .classList.toggle("hidden", platform !== "whatsapp");
+  document
+    .getElementById("telegramSetup")
+    .classList.toggle("hidden", platform !== "telegram");
 
   const phoneLabel = document.getElementById("waPhoneLabel");
   const phoneInput = document.getElementById("waPhone");
-  const apiKeyField = document.getElementById("waApiKey").closest(".config-field");
+  const apiKeyField = document
+    .getElementById("waApiKey")
+    .closest(".config-field");
 
   if (platform === "telegram") {
     phoneLabel.textContent = "Telegram Username (without @)";
@@ -228,7 +244,6 @@ function trackProduct() {
       }
       status.innerHTML = msg;
 
-      // Clear form
       document.getElementById("productUrl").value = "";
       document.getElementById("targetPrice").value = "";
 
@@ -247,14 +262,17 @@ function loadProducts() {
     .then((products) => {
       const container = document.getElementById("productsContainer");
       const empty = document.getElementById("emptyState");
+      const count = document.getElementById("productCount");
 
       if (products.length === 0) {
         container.innerHTML = "";
         empty.classList.remove("hidden");
+        count.textContent = "";
         return;
       }
 
       empty.classList.add("hidden");
+      count.textContent = `${products.length} product${products.length !== 1 ? "s" : ""}`;
       container.innerHTML = products.map(renderProduct).join("");
     });
 }
@@ -266,17 +284,24 @@ function renderProduct(p) {
       : "price-above";
 
   const priceDisplay =
-    p.current_price !== null ? `$${p.current_price.toFixed(2)}` : "Unknown";
+    p.current_price !== null ? `$${p.current_price.toFixed(2)}` : "—";
 
   const lastChecked = p.last_checked
-    ? new Date(p.last_checked).toLocaleString()
+    ? timeAgo(new Date(p.last_checked))
     : "Never";
 
-  const statusBadge = p.notified
-    ? '<span class="badge badge-success">Notified</span>'
-    : '<span class="badge badge-tracking">Tracking</span>';
+  let statusBadge;
+  if (p.notified) {
+    statusBadge = '<span class="badge badge-success">Alerted</span>';
+  } else if (
+    p.current_price !== null &&
+    p.current_price <= p.target_price
+  ) {
+    statusBadge = '<span class="badge badge-success">Below target</span>';
+  } else {
+    statusBadge = '<span class="badge badge-tracking">Tracking</span>';
+  }
 
-  // Mini price chart using SVG
   let chartSvg = "";
   if (p.price_history && p.price_history.length > 1) {
     const prices = p.price_history.map((h) => h.price);
@@ -297,6 +322,17 @@ function renderProduct(p) {
     </svg>`;
   }
 
+  const savings =
+    p.current_price !== null
+      ? (p.current_price - p.target_price).toFixed(2)
+      : null;
+  const savingsHtml =
+    savings !== null && parseFloat(savings) > 0
+      ? `<span class="price-diff">$${savings} above target</span>`
+      : savings !== null && parseFloat(savings) <= 0
+        ? `<span class="price-diff price-diff-good">$${Math.abs(parseFloat(savings)).toFixed(2)} below target</span>`
+        : "";
+
   return `
     <div class="product-card">
       <div class="product-info">
@@ -314,26 +350,40 @@ function renderProduct(p) {
             <span class="price-label">Target</span>
             <span class="price-value">$${p.target_price.toFixed(2)}</span>
           </div>
+          <div class="price-item price-item-info">
+            ${savingsHtml}
+          </div>
         </div>
         ${chartSvg}
         <div class="product-meta">
-          <span>Last checked: ${lastChecked}</span>
-          <span>Alert: ${p.email}</span>
+          <span>Checked ${lastChecked}</span>
+          <span>Alerts to ${p.email}</span>
         </div>
       </div>
       <div class="product-actions">
-        <button class="btn-small btn-check" onclick="checkNow('${p.id}', this)">Check Now</button>
-        <button class="btn-small btn-delete" onclick="deleteProduct('${p.id}')">Remove</button>
+        <button class="btn-small btn-check" onclick="checkNow('${p.id}', this)" title="Check price now">Check Now</button>
+        <button class="btn-small btn-delete" onclick="confirmDelete('${p.id}', '${(p.name || "this product").replace(/'/g, "\\'")}')" title="Stop tracking">Remove</button>
       </div>
     </div>
   `;
+}
+
+function timeAgo(date) {
+  const seconds = Math.floor((new Date() - date) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 function truncateUrl(url) {
   try {
     const u = new URL(url);
     let path = u.pathname;
-    if (path.length > 50) path = path.substring(0, 50) + "...";
+    if (path.length > 40) path = path.substring(0, 40) + "...";
     return u.hostname + path;
   } catch {
     return url.length > 60 ? url.substring(0, 60) + "..." : url;
@@ -369,9 +419,16 @@ function checkNow(productId, btn) {
     });
 }
 
+function confirmDelete(productId, productName) {
+  if (confirm(`Stop tracking "${productName}"?`)) {
+    deleteProduct(productId);
+  }
+}
+
 function deleteProduct(productId) {
-  fetch(`/api/price/delete/${productId}`, { method: "DELETE" })
-    .then(() => loadProducts());
+  fetch(`/api/price/delete/${productId}`, { method: "DELETE" }).then(() =>
+    loadProducts(),
+  );
 }
 
 function showError(msg) {

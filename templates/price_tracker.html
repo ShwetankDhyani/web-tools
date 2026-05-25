@@ -4,13 +4,21 @@
 {% block content %}
 <section class="tool-page">
   <h1>Price Tracker</h1>
-  <p class="tool-desc">Track product prices from any online store. Get an instant email when the price drops below your target.</p>
+  <p class="tool-desc">Track product prices from any online store. Get notified when the price drops below your target.</p>
 
-  <!-- Email config banner -->
-  <div id="emailBanner" class="email-banner hidden">
-    <p>Set up your SMTP email to receive price drop alerts.</p>
-    <button class="btn-secondary" onclick="toggleEmailConfig()">Configure Email</button>
+  <!-- Notification settings bar -->
+  <div class="notif-settings-bar">
+    <div class="notif-status">
+      <span id="emailStatus" class="notif-chip">Email: <span id="emailStatusText">not set</span></span>
+      <span id="msgStatus" class="notif-chip">Messaging: <span id="msgStatusText">not set</span></span>
+    </div>
+    <div class="notif-actions">
+      <button class="btn-secondary btn-sm" onclick="toggleEmailConfig()">Email Settings</button>
+      <button class="btn-secondary btn-sm" onclick="toggleWhatsAppConfig()">WhatsApp / Telegram</button>
+      <button class="btn-secondary btn-sm" id="testNotifBtn" onclick="testNotifications()" style="display:none;">Test Alert</button>
+    </div>
   </div>
+  <span id="testNotifResult" style="font-size: 0.85rem; margin-top: -0.75rem; display: block; margin-bottom: 1rem;"></span>
 
   <!-- Email config form (hidden) -->
   <div id="emailConfig" class="email-config hidden">
@@ -38,12 +46,6 @@
       <button class="btn-primary" id="saveEmailBtn" onclick="saveEmailConfig()">Save</button>
       <button class="btn-secondary" onclick="toggleEmailConfig()">Cancel</button>
     </div>
-  </div>
-
-  <!-- Messaging config banner -->
-  <div id="whatsappBanner" class="email-banner hidden">
-    <p>Get price drop alerts on WhatsApp or Telegram!</p>
-    <button class="btn-secondary" onclick="toggleWhatsAppConfig()">Configure Alerts</button>
   </div>
 
   <!-- Messaging config form (hidden) -->
@@ -90,45 +92,47 @@
     </div>
   </div>
 
-  <!-- Test notifications -->
-  <div id="testNotifBar" class="email-banner hidden">
-    <p>Verify your notification setup works correctly.</p>
-    <button class="btn-secondary" id="testNotifBtn" onclick="testNotifications()">Send Test Alert</button>
-    <span id="testNotifResult" style="margin-left: 0.75rem; font-size: 0.9rem;"></span>
-  </div>
-
-  <!-- Add product form -->
-  <div class="track-form">
-    <h3>Track a Product</h3>
-    <div class="form-row">
-      <input type="url" id="productUrl" placeholder="https://www.amazon.com/dp/..." />
-    </div>
-    <div class="form-row-half">
-      <div class="form-field">
-        <label for="targetPrice">Target Price</label>
-        <input type="number" id="targetPrice" placeholder="99.99" step="0.01" min="0" />
-      </div>
-      <div class="form-field">
-        <label for="alertEmail">Alert Email</label>
-        <input type="email" id="alertEmail" placeholder="you@example.com" />
-      </div>
-    </div>
-    <button class="btn-primary" id="trackBtn" onclick="trackProduct()">Start Tracking</button>
-  </div>
-
-  <!-- Status -->
-  <div id="trackStatus" class="track-status hidden"></div>
-
   <!-- Error -->
   <div id="errorSection" class="error-section hidden">
     <p id="errorText"></p>
   </div>
 
-  <!-- Tracked Products List -->
+  <!-- Status -->
+  <div id="trackStatus" class="track-status hidden"></div>
+
+  <!-- Tracked Products List (shown first, prominent) -->
   <div id="productsList" class="products-list">
-    <h3>Tracked Products</h3>
+    <div class="products-header">
+      <h3>Your Tracked Products</h3>
+      <span id="productCount" class="product-count"></span>
+    </div>
+
     <div id="productsContainer"></div>
-    <p id="emptyState" class="empty-state hidden">No products being tracked yet.</p>
+
+    <div id="emptyState" class="empty-state-box hidden">
+      <div class="empty-icon">📦</div>
+      <h4>No products tracked yet</h4>
+      <p>Add a product URL below to start tracking its price. You'll get notified when it drops below your target.</p>
+    </div>
+  </div>
+
+  <!-- Add product form -->
+  <div class="track-form" id="addProductForm">
+    <h3>Add New Product</h3>
+    <div class="form-row">
+      <input type="url" id="productUrl" placeholder="Paste product URL (Amazon, Flipkart, any store...)" />
+    </div>
+    <div class="form-row-half">
+      <div class="form-field">
+        <label for="targetPrice">Alert me when price drops below</label>
+        <input type="number" id="targetPrice" placeholder="99.99" step="0.01" min="0" />
+      </div>
+      <div class="form-field">
+        <label for="alertEmail">Send alert to this email</label>
+        <input type="email" id="alertEmail" placeholder="you@example.com" />
+      </div>
+    </div>
+    <button class="btn-primary" id="trackBtn" onclick="trackProduct()">Start Tracking</button>
   </div>
 </section>
 {% endblock %}

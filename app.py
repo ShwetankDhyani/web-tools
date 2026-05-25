@@ -704,6 +704,18 @@ def _send_price_alert(product: dict, new_price: float):
         return False
 
 
+def _shorten_url(url: str) -> str:
+    """Shorten a product URL for messaging (keep domain + short path)."""
+    try:
+        parsed = urlparse(url)
+        path = parsed.path
+        if len(path) > 60:
+            path = path[:57] + "..."
+        return f"{parsed.scheme}://{parsed.hostname}{path}"
+    except Exception:
+        return url[:100] if len(url) > 100 else url
+
+
 def _send_whatsapp_alert(product: dict, new_price: float):
     """Send a WhatsApp or Telegram alert via CallMeBot."""
     conn = _get_db()
@@ -716,12 +728,13 @@ def _send_whatsapp_alert(product: dict, new_price: float):
 
     platform = config["platform"] if "platform" in config.keys() else "whatsapp"
 
+    short_url = _shorten_url(product['url'])
     text = (
         f"Price Drop Alert!\n\n"
         f"{product['name'] or 'Product'}\n"
         f"Current price: ${new_price:.2f}\n"
         f"Your target: ${product['target_price']:.2f}\n\n"
-        f"{product['url']}\n\n"
+        f"{short_url}\n\n"
         f"- WebTools.wiki Price Tracker"
     )
 
