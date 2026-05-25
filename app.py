@@ -85,6 +85,21 @@ def _init_db():
         );
     """)
     conn.commit()
+
+    # Safe migrations: add columns that may not exist in older databases
+    migrations = [
+        ("tracked_products", "currency", "TEXT NOT NULL DEFAULT '$'"),
+        ("tracked_products", "username", "TEXT NOT NULL DEFAULT ''"),
+        ("tracked_products", "error_count", "INTEGER DEFAULT 0"),
+        ("tracked_products", "last_error", "TEXT DEFAULT ''"),
+    ]
+    for table, column, col_type in migrations:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
     conn.close()
 
 
@@ -1166,6 +1181,26 @@ def admin_reset_errors(product_id: str):
     conn.commit()
     conn.close()
     return jsonify({"ok": True})
+
+
+@app.route("/api/price/admin/users")
+@api_login_required
+def admin_users():
+    """List all registered users with their product counts."""
+    if not _is_admin():
+        return jsonify({"error": "Admin access required"}), 403
+    conn = _get_db()
+    users = conn.execute(
+        """SELECT u.username, u.created_at, u.is_admin,
+                  COUNT(p.id) as product_count,
+                  SUM(CASE WHEN p.notified = 0 THEN 1 ELSE 0 END) as active_count
+           FROM users u
+           LEFT JOIN tracked_products p ON u.username = p.username
+           GROUP BY u.username
+           ORDER BY u.created_at DESC"""
+    ).fetchall()
+    conn.close()
+    return jsonify([dict(u) for u in users])
 
 
 # ---------------------------------------------------------------------------

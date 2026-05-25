@@ -48,6 +48,12 @@
     <span id="actionResult" class="action-result"></span>
   </div>
 
+  <!-- Users table -->
+  <div class="admin-products">
+    <h3>Registered Users</h3>
+    <div id="adminUsersContainer"></div>
+  </div>
+
   <!-- Products table -->
   <div class="admin-products">
     <h3>All Tracked Products</h3>
@@ -64,6 +70,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!data.logged_in) { window.location.href = "/price-tracker/login"; return; }
     if (!data.is_admin) { window.location.href = "/price-tracker"; return; }
     loadStatus();
+    loadUsers();
     loadAdminProducts();
   });
 });
@@ -82,6 +89,28 @@ function loadStatus() {
       }
       document.getElementById("lastCheckedInfo").textContent =
         "Last checked: " + (data.last_checked ? timeAgo(new Date(data.last_checked)) : "never");
+    });
+}
+
+function loadUsers() {
+  fetch("/api/price/admin/users")
+    .then(r => r.json())
+    .then(users => {
+      const container = document.getElementById("adminUsersContainer");
+      if (!users.length) { container.innerHTML = "<p class='admin-empty'>No users yet.</p>"; return; }
+      container.innerHTML = `
+        <table class="admin-table">
+          <thead><tr><th>Username</th><th>Role</th><th>Products</th><th>Active</th><th>Joined</th></tr></thead>
+          <tbody>${users.map(u => `
+            <tr>
+              <td><strong>@${u.username}</strong></td>
+              <td>${u.is_admin ? '<span class="badge badge-admin">Admin</span>' : '<span class="badge badge-tracking">User</span>'}</td>
+              <td>${u.product_count}</td>
+              <td>${u.active_count || 0}</td>
+              <td>${timeAgo(new Date(u.created_at))}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>`;
     });
 }
 
