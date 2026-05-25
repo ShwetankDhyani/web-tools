@@ -26,6 +26,7 @@ from urllib.parse import urlparse
 
 import requests
 
+from price_log import log_check_run
 from scraper import scrape_price
 
 # ---------------------------------------------------------------------------
@@ -153,10 +154,12 @@ def check_all_prices():
         url = product["url"]
         logger.info("Checking: %s", product.get("name") or url[:60])
 
+        scrape_error = None
         try:
             _, new_price = scrape_price(url)
         except Exception as e:
             new_price = None
+            scrape_error = str(e)
             logger.error("Scrape exception for %s: %s", url[:80], e)
 
         now = datetime.now(timezone.utc).isoformat()
@@ -164,15 +167,19 @@ def check_all_prices():
 
         if new_price is None:
             error_count = product.get("error_count", 0) + 1
+            err_msg = scrape_error or f"Failed to scrape price at {now}"
             logger.warning("Could not get price for %s (fail #%d)", url[:80], error_count)
             conn.execute(
                 """UPDATE tracked_products
                    SET error_count = ?, last_error = ?, last_checked = ?
                    WHERE id = ?""",
-                (error_count, f"Failed to scrape price at {now}", now, product["id"]),
+                (error_count, err_msg, now, product["id"]),
             )
             conn.commit()
             conn.close()
+            log_check_run(product["id"], False, error=err_msg, source="cron")
+            if i < len(due) - 1:
+                time.sleep(random.uniform(1.0, 4.0))
             continue
 
         history = json.loads(product["price_history"] or "[]")
@@ -186,6 +193,7 @@ def check_all_prices():
                WHERE id = ?""",
             (new_price, now, json.dumps(history), product["id"]),
         )
+        log_check_run(product["id"], True, price=new_price, source="cron")
 
         if new_price <= product["target_price"]:
             logger.info("Price %.2f is at or below target %.2f!", new_price, product["target_price"])

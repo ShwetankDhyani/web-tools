@@ -50,6 +50,7 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "price_tracke
 def _get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -83,7 +84,22 @@ def _init_db():
             code TEXT NOT NULL,
             created_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS check_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id TEXT NOT NULL,
+            checked_at TEXT NOT NULL,
+            success INTEGER NOT NULL,
+            price REAL,
+            error TEXT,
+            source TEXT NOT NULL DEFAULT 'cron',
+            FOREIGN KEY (product_id) REFERENCES tracked_products(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_check_runs_product ON check_runs(product_id);
+        CREATE INDEX IF NOT EXISTS idx_check_runs_time ON check_runs(checked_at);
     """)
+    conn.execute("PRAGMA foreign_keys = ON")
     conn.commit()
 
     # Safe migrations: add columns that may not exist in older databases
@@ -892,6 +908,7 @@ def paywall_read():
 # API – Price Tracker
 # ---------------------------------------------------------------------------
 
+from price_log import log_check_run
 from scraper import scrape_price as _scrape_price
 
 
@@ -1002,6 +1019,14 @@ def price_track():
     conn.commit()
     conn.close()
 
+    log_check_run(
+        product_id,
+        current_price is not None,
+        price=current_price,
+        error=None if current_price is not None else "Could not fetch price on add",
+        source="initial",
+    )
+
     # If already below target, send alert immediately
     if current_price is not None and current_price <= target_price:
         product = {
@@ -1108,22 +1133,35 @@ def price_check_now(product_id: str):
 
     product = dict(product)
     _, new_price = _scrape_price(product["url"])
+    now = datetime.now(timezone.utc).isoformat()
 
     if new_price is None:
+        error_count = product.get("error_count", 0) + 1
+        conn.execute(
+            """UPDATE tracked_products
+               SET error_count = ?, last_error = ?, last_checked = ?
+               WHERE id = ?""",
+            (error_count, f"Manual check failed at {now}", now, product_id),
+        )
+        conn.commit()
         conn.close()
+        log_check_run(
+            product_id, False, error="Could not fetch current price", source="manual"
+        )
         return jsonify({"error": "Could not fetch current price"}), 502
 
-    now = datetime.now(timezone.utc).isoformat()
     history = json.loads(product["price_history"] or "[]")
     history.append({"price": new_price, "date": now})
     history = history[-100:]
 
     conn.execute(
         """UPDATE tracked_products
-           SET current_price = ?, last_checked = ?, price_history = ?
+           SET current_price = ?, last_checked = ?, price_history = ?,
+               error_count = 0, last_error = ''
            WHERE id = ?""",
         (new_price, now, json.dumps(history), product_id),
     )
+    log_check_run(product_id, True, price=new_price, source="manual")
 
     notified = False
     if new_price <= product["target_price"] and not product["notified"]:
@@ -1177,6 +1215,13 @@ def price_tracker_status():
     last_checked_row = conn.execute(
         "SELECT last_checked FROM tracked_products ORDER BY last_checked DESC LIMIT 1"
     ).fetchone()
+    check_stats = conn.execute(
+        """SELECT
+             COUNT(*) AS total,
+             COALESCE(SUM(success), 0) AS successful,
+             COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS failed
+           FROM check_runs"""
+    ).fetchone()
     conn.close()
 
     return jsonify({
@@ -1186,6 +1231,11 @@ def price_tracker_status():
         "erroring": erroring,
         "total_users": user_count,
         "last_checked": last_checked_row["last_checked"] if last_checked_row else None,
+        "check_runs": {
+            "total": check_stats["total"] or 0,
+            "successful": check_stats["successful"] or 0,
+            "failed": check_stats["failed"] or 0,
+        },
     })
 
 
@@ -1195,7 +1245,12 @@ def admin_products():
     """List all products with error info for admin view."""
     conn = _get_db()
     rows = conn.execute(
-        "SELECT * FROM tracked_products ORDER BY error_count DESC, created_at DESC"
+        """SELECT p.*,
+                  (SELECT COUNT(*) FROM check_runs c WHERE c.product_id = p.id) AS check_total,
+                  (SELECT COUNT(*) FROM check_runs c WHERE c.product_id = p.id AND c.success = 1) AS check_success,
+                  (SELECT COUNT(*) FROM check_runs c WHERE c.product_id = p.id AND c.success = 0) AS check_failed
+           FROM tracked_products p
+           ORDER BY p.error_count DESC, p.created_at DESC"""
     ).fetchall()
     conn.close()
     products = []
@@ -1204,6 +1259,27 @@ def admin_products():
         r["price_history"] = json.loads(r["price_history"] or "[]")
         products.append(r)
     return jsonify(products)
+
+
+@app.route("/api/price/admin/check-history")
+@api_login_required
+def admin_check_history():
+    """Recent check iterations across all products (admin only)."""
+    if not _is_admin():
+        return jsonify({"error": "Admin access required"}), 403
+    limit = min(int(request.args.get("limit", 40)), 100)
+    conn = _get_db()
+    rows = conn.execute(
+        """SELECT c.id, c.product_id, c.checked_at, c.success, c.price, c.error, c.source,
+                  p.name, p.url, p.username, p.currency
+           FROM check_runs c
+           JOIN tracked_products p ON p.id = c.product_id
+           ORDER BY c.checked_at DESC
+           LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
 
 
 @app.route("/api/price/admin/cleanup", methods=["POST"])

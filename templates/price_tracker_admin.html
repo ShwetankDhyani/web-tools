@@ -30,11 +30,32 @@
       <span class="stat-value" id="statUsers">—</span>
       <span class="stat-label">Total Users</span>
     </div>
+    <div class="stat-card">
+      <span class="stat-value" id="statCheckTotal">—</span>
+      <span class="stat-label">Check iterations</span>
+    </div>
+    <div class="stat-card stat-card-ok">
+      <span class="stat-value" id="statCheckOk">—</span>
+      <span class="stat-label">Succeeded</span>
+    </div>
+    <div class="stat-card stat-card-warn" id="statCheckFailCard">
+      <span class="stat-value" id="statCheckFail">—</span>
+      <span class="stat-label">Failed</span>
+    </div>
   </div>
 
   <!-- Last check -->
   <div class="admin-info-bar">
-    <span id="lastCheckedInfo">Last checked: —</span>
+    <span id="lastCheckedInfo">Last product check: —</span>
+    <span id="checkSuccessRate" class="check-rate"></span>
+  </div>
+
+  <!-- Recent check activity -->
+  <div class="admin-products">
+    <h3>Recent check activity</h3>
+    <div id="checkHistoryContainer">
+      <p class="admin-empty">Loading...</p>
+    </div>
   </div>
 
   <!-- Bulk actions -->
@@ -70,6 +91,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!data.logged_in) { window.location.href = "/price-tracker/login"; return; }
     if (!data.is_admin) { window.location.href = "/price-tracker"; return; }
     loadStatus();
+    loadCheckHistory();
     loadUsers();
     loadAdminProducts();
   });
@@ -87,9 +109,71 @@ function loadStatus() {
       if (data.erroring > 0) {
         document.getElementById("statErrorCard").classList.add("has-errors");
       }
+      const runs = data.check_runs || { total: 0, successful: 0, failed: 0 };
+      document.getElementById("statCheckTotal").textContent = runs.total;
+      document.getElementById("statCheckOk").textContent = runs.successful;
+      document.getElementById("statCheckFail").textContent = runs.failed;
+      if (runs.failed > 0) {
+        document.getElementById("statCheckFailCard").classList.add("has-errors");
+      }
       document.getElementById("lastCheckedInfo").textContent =
-        "Last checked: " + (data.last_checked ? timeAgo(new Date(data.last_checked)) : "never");
+        "Last product check: " + (data.last_checked ? timeAgo(new Date(data.last_checked)) : "never");
+      const rateEl = document.getElementById("checkSuccessRate");
+      if (runs.total > 0) {
+        const pct = Math.round((runs.successful / runs.total) * 100);
+        rateEl.textContent = `Success rate: ${pct}% (${runs.successful} ok / ${runs.failed} failed)`;
+      } else {
+        rateEl.textContent = "No check iterations logged yet.";
+      }
     });
+}
+
+function loadCheckHistory() {
+  fetch("/api/price/admin/check-history?limit=40")
+    .then(r => r.json())
+    .then(rows => {
+      const container = document.getElementById("checkHistoryContainer");
+      if (!rows.length) {
+        container.innerHTML = "<p class='admin-empty'>No checks logged yet. Runs appear after cron or manual checks.</p>";
+        return;
+      }
+      container.innerHTML = `
+        <table class="admin-table admin-table-compact">
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Product</th>
+              <th>User</th>
+              <th>Source</th>
+              <th>Result</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => {
+              const ok = r.success === 1;
+              const cur = r.currency || "$";
+              const detail = ok && r.price != null
+                ? `${cur}${Number(r.price).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+                : (r.error || "—");
+              return `<tr class="${ok ? "" : "row-error"}">
+                <td>${timeAgo(new Date(r.checked_at))}</td>
+                <td><div class="admin-product-name">${escapeHtml(r.name || "Unknown")}</div></td>
+                <td>@${escapeHtml(r.username || "—")}</td>
+                <td><span class="badge badge-source">${escapeHtml(r.source || "cron")}</span></td>
+                <td>${ok ? '<span class="badge badge-success">OK</span>' : '<span class="badge badge-error">Failed</span>'}</td>
+                <td class="check-detail">${escapeHtml(detail)}</td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>`;
+    });
+}
+
+function escapeHtml(s) {
+  const d = document.createElement("div");
+  d.textContent = s == null ? "" : String(s);
+  return d.innerHTML;
 }
 
 function loadUsers() {
@@ -137,6 +221,7 @@ function loadAdminProducts() {
               <th>Price</th>
               <th>Target</th>
               <th>Status</th>
+              <th>Checks</th>
               <th>Errors</th>
               <th>Last Checked</th>
               <th>Actions</th>
@@ -162,8 +247,15 @@ function renderAdminRow(p) {
     status = '<span class="badge badge-tracking">Tracking</span>';
   }
 
+  const total = p.check_total || 0;
+  const ok = p.check_success || 0;
+  const fail = p.check_failed || 0;
+  const checksCell = total > 0
+    ? `<span class="check-stats" title="${ok} succeeded, ${fail} failed">${total} <span class="check-ok">${ok}✓</span> <span class="check-fail">${fail}✗</span></span>`
+    : '<span class="no-errors">0</span>';
+
   const errorCell = p.error_count > 0
-    ? `<span class="error-count" title="${p.last_error || ''}">${p.error_count} fail${p.error_count !== 1 ? 's' : ''}</span>`
+    ? `<span class="error-count" title="${p.last_error || ''}">${p.error_count} streak</span>`
     : '<span class="no-errors">0</span>';
 
   const cur = p.currency || "$";
@@ -182,6 +274,7 @@ function renderAdminRow(p) {
       <td>${priceDisplay}</td>
       <td>${cur}${p.target_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
       <td>${status}</td>
+      <td>${checksCell}</td>
       <td>${errorCell}</td>
       <td>${lastChecked}</td>
       <td class="action-cell">

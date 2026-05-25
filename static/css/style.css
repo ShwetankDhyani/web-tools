@@ -877,7 +877,7 @@ img { max-width: 100%; height: auto; }
 
 .admin-stats {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 1rem;
   margin-bottom: 1.25rem;
 }
@@ -906,10 +906,17 @@ img { max-width: 100%; height: auto; }
 .stat-card-warn.has-errors .stat-value {
   color: #e74c3c;
 }
+.stat-card-ok .stat-value {
+  color: var(--accent);
+}
+.check-rate {
+  color: var(--text-muted);
+}
 
 .admin-info-bar {
   display: flex;
-  gap: 2rem;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
   font-size: 0.85rem;
   color: var(--text-muted);
   margin-bottom: 1.5rem;
@@ -985,6 +992,27 @@ img { max-width: 100%; height: auto; }
   cursor: help;
 }
 .no-errors { color: var(--text-muted); }
+.check-stats { font-weight: 600; white-space: nowrap; }
+.check-ok { color: var(--accent); margin-left: 0.15rem; }
+.check-fail { color: #e74c3c; margin-left: 0.15rem; }
+.check-detail {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+.badge-source {
+  background: rgba(108, 92, 231, 0.12);
+  color: var(--primary-light);
+  font-size: 0.65rem;
+  text-transform: lowercase;
+}
+.admin-table-compact td,
+.admin-table-compact th {
+  padding: 0.5rem 0.4rem;
+  font-size: 0.8rem;
+}
 .action-cell {
   display: flex;
   gap: 0.35rem;
