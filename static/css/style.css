@@ -650,18 +650,154 @@ img { max-width: 100%; height: auto; }
   border-top: 1px solid var(--border);
 }
 
-/* ---- Responsive ---- */
-@media (max-width: 640px) {
+/* ---- Hamburger Toggle (hidden on desktop) ---- */
+.nav-toggle {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem;
+  flex-direction: column;
+  gap: 5px;
+  z-index: 110;
+}
+.nav-toggle span {
+  display: block;
+  width: 24px;
+  height: 2px;
+  background: var(--text);
+  border-radius: 2px;
+  transition: transform 0.3s, opacity 0.3s;
+}
+.nav-toggle.active span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+.nav-toggle.active span:nth-child(2) {
+  opacity: 0;
+}
+.nav-toggle.active span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+/* ---- Responsive: Tablet ---- */
+@media (max-width: 768px) {
+  .navbar {
+    padding: 0.75rem 1rem;
+    flex-wrap: wrap;
+  }
+  .nav-toggle {
+    display: flex;
+  }
+  .nav-links {
+    display: none;
+    flex-direction: column;
+    width: 100%;
+    gap: 0;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+    margin-top: 0.75rem;
+  }
+  .nav-links.open {
+    display: flex;
+  }
+  .nav-links a {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 1rem;
+  }
+  .nav-links a:last-child {
+    border-bottom: none;
+  }
+
+  .hero { padding: 2.5rem 0 2rem; }
   .hero h1 { font-size: 2rem; }
-  .input-group { flex-direction: column; }
-  .video-info { flex-direction: column; }
+  .hero-sub { font-size: 1rem; }
+
+  .tools-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .tool-card { padding: 1.5rem; }
+  .tool-card h2 { font-size: 1.2rem; }
+
+  .features {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+  .feature { padding: 1rem; }
+
+  .container { padding: 1.25rem 1rem; }
+  .tool-page h1 { font-size: 1.5rem; }
+  .tool-desc { font-size: 0.9rem; margin-bottom: 1.25rem; }
+
+  .input-group {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .input-group input { font-size: 0.95rem; padding: 0.75rem 0.85rem; }
+  .btn-primary { width: 100%; padding: 0.85rem; }
+
+  .video-info {
+    flex-direction: column;
+    padding: 1rem;
+  }
   .video-thumb { width: 100%; }
-  .navbar { padding: 0.75rem 1rem; }
-  .nav-links { gap: 0.75rem; font-size: 0.9rem; }
-  .article-site-bar { flex-wrap: wrap; }
+  .video-meta h3 { font-size: 1rem; }
+
+  .article-section { border-radius: 8px; }
+  .article-site-bar { flex-wrap: wrap; gap: 0.4rem; padding: 0.6rem 1rem; }
+  .article-title { font-size: 1.2rem; padding: 1rem 1rem 0.5rem; }
+
   .form-row-half { grid-template-columns: 1fr; }
   .config-grid { grid-template-columns: 1fr; }
-  .product-card { flex-direction: column; }
-  .product-actions { flex-direction: row; }
-  .email-banner { flex-direction: column; }
+
+  .track-form { padding: 1.25rem; }
+  .track-form h3 { font-size: 1.1rem; }
+
+  .email-banner {
+    flex-direction: column;
+    text-align: center;
+    gap: 0.75rem;
+    padding: 1rem;
+  }
+  .email-config { padding: 1.25rem; }
+
+  .product-card {
+    flex-direction: column;
+    padding: 1rem 1.25rem;
+    gap: 0.75rem;
+  }
+  .product-header { flex-wrap: wrap; }
+  .product-header h4 {
+    font-size: 0.9rem;
+    white-space: normal;
+    word-break: break-word;
+  }
+  .product-prices { gap: 1.25rem; }
+  .product-actions {
+    flex-direction: row;
+    width: 100%;
+  }
+  .product-actions .btn-small {
+    flex: 1;
+    text-align: center;
+  }
+  .price-chart { width: 100%; }
+
+  .products-list h3 { font-size: 1.1rem; }
+
+  .footer { padding: 1.25rem 1rem; font-size: 0.8rem; }
+}
+
+/* ---- Responsive: Small phones ---- */
+@media (max-width: 400px) {
+  .hero h1 { font-size: 1.6rem; }
+  .hero-sub { font-size: 0.9rem; }
+  .hero-domain { font-size: 0.75rem; }
+  .nav-brand { font-size: 1.1rem; }
+  .nav-brand svg { width: 22px; height: 22px; }
+  .tool-card { padding: 1.25rem; }
+  .tool-icon svg { width: 36px; height: 36px; }
+  .product-prices { flex-direction: column; gap: 0.5rem; }
+  .container { padding: 1rem 0.75rem; }
 }
