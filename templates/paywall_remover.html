@@ -4,39 +4,150 @@
 {% block content %}
 <section class="tool-page">
   <h1>Paywall Remover</h1>
-  <p class="tool-desc">Paste the URL of a paywalled article and read it for free, styled like the original site.</p>
+  <p class="tool-desc">Paste the URL of a paywalled article and read it for free.</p>
 
   <div class="input-group">
-    <input type="url" id="articleUrl" placeholder="https://www.nytimes.com/2025/..." autocomplete="off" />
+    <input type="url" id="articleUrl" placeholder="https://example.com/article..." autocomplete="off" />
     <button id="readBtn" class="btn-primary">Read Article</button>
   </div>
 
   <!-- Loading -->
   <div id="loadingSection" class="loading-section hidden">
-    <div class="spinner"></div>
-    <p>Fetching article content&hellip;</p>
+    <div class="pw-spinner"></div>
+    <p>Fetching article — trying multiple sources&hellip;</p>
   </div>
 
-  <!-- Article rendered with original site styles -->
+  <!-- Article rendered in clean reader mode -->
   <div id="articleSection" class="article-section hidden">
-    <div class="article-site-bar">
-      <img id="siteFavicon" class="site-favicon" src="" alt="" />
-      <span id="siteName" class="site-name"></span>
+    <div class="reader-meta">
+      <div class="reader-meta-left">
+        <img id="siteFavicon" class="site-favicon" src="" alt="" onerror="this.style.display='none'" />
+        <span id="siteName" class="site-name"></span>
+      </div>
       <a id="articleSource" href="#" target="_blank" rel="noopener" class="source-link">View original &rarr;</a>
     </div>
-    <h1 id="articleTitle" class="article-title"></h1>
-    <div id="articleFrame" class="article-frame">
-      <iframe id="styledFrame" sandbox="allow-same-origin" class="styled-article-frame"></iframe>
+
+    <h1 id="articleTitle" class="reader-title"></h1>
+
+    <div class="reader-byline" id="articleByline"></div>
+
+    <div id="articleContent" class="reader-content"></div>
+
+    <div class="reader-footer">
+      <span id="wordCount"></span>
+      <a id="articleSourceFooter" href="#" target="_blank" rel="noopener">View original article &rarr;</a>
     </div>
   </div>
 
   <!-- Error -->
   <div id="errorSection" class="error-section hidden">
-    <p id="errorText"></p>
+    <div class="pw-error-card">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <p id="errorText"></p>
+      <p class="pw-error-hint">Some sites aggressively block automated access. Try a different article or source.</p>
+    </div>
   </div>
 </section>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/paywall_remover.js"></script>
+<script>
+(() => {
+  const $ = (sel) => document.querySelector(sel);
+
+  const urlInput      = $("#articleUrl");
+  const readBtn       = $("#readBtn");
+  const loadingSec    = $("#loadingSection");
+  const articleSec    = $("#articleSection");
+  const articleTitle  = $("#articleTitle");
+  const articleSource = $("#articleSource");
+  const siteFavicon   = $("#siteFavicon");
+  const siteName      = $("#siteName");
+  const articleContent = $("#articleContent");
+  const articleByline = $("#articleByline");
+  const wordCount     = $("#wordCount");
+  const articleSourceFooter = $("#articleSourceFooter");
+  const errorSec      = $("#errorSection");
+  const errorText     = $("#errorText");
+
+  function hideAll() {
+    loadingSec.classList.add("hidden");
+    articleSec.classList.add("hidden");
+    errorSec.classList.add("hidden");
+  }
+
+  function showError(msg) {
+    hideAll();
+    errorText.textContent = msg;
+    errorSec.classList.remove("hidden");
+  }
+
+  function renderArticle(data) {
+    hideAll();
+
+    // Site bar
+    siteFavicon.src = data.favicon || "";
+    siteFavicon.style.display = "";
+    siteName.textContent = data.site_name || "";
+    articleSource.href = data.source_url;
+    articleSourceFooter.href = data.source_url;
+    articleTitle.textContent = data.title || "Untitled";
+
+    // Byline
+    const parts = [];
+    if (data.author) parts.push(data.author);
+    if (data.published) parts.push(data.published);
+    if (data.word_count > 0) {
+      const mins = Math.max(1, Math.round(data.word_count / 238));
+      parts.push(`${mins} min read`);
+    }
+    articleByline.textContent = parts.join("  ·  ");
+
+    wordCount.textContent = data.word_count > 0
+      ? `${data.word_count.toLocaleString()} words`
+      : "";
+
+    // Content
+    articleContent.innerHTML = data.content;
+
+    articleSec.classList.remove("hidden");
+    window.scrollTo({ top: articleSec.offsetTop - 80, behavior: "smooth" });
+  }
+
+  readBtn.addEventListener("click", async () => {
+    const url = urlInput.value.trim();
+    if (!url) return;
+
+    hideAll();
+    loadingSec.classList.remove("hidden");
+    readBtn.disabled = true;
+    readBtn.textContent = "Reading...";
+
+    try {
+      const res = await fetch("/api/paywall/read", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showError(data.error || "Could not fetch article.");
+        return;
+      }
+
+      renderArticle(data);
+    } catch {
+      showError("Network error. Please try again.");
+    } finally {
+      readBtn.disabled = false;
+      readBtn.textContent = "Read Article";
+    }
+  });
+
+  urlInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") readBtn.click();
+  });
+})();
+</script>
 {% endblock %}

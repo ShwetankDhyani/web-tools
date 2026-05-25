@@ -463,6 +463,8 @@ def video_file(task_id: str):
 # API – Paywall Remover
 # ---------------------------------------------------------------------------
 
+from curl_cffi import requests as cffi_requests
+
 BROWSER_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -520,16 +522,26 @@ def _clean_url(url: str) -> str:
     return cleaned.geturl()
 
 
-def _has_article_content(html: str) -> bool:
+def _has_article_content(html: str, min_chars: int = 500) -> bool:
     """Heuristic: check if the HTML likely has real article text."""
     soup = BeautifulSoup(html, "lxml")
     text = soup.get_text(separator=" ", strip=True)
-    return len(text) > 800
+    if len(text) < min_chars:
+        return False
+    # Reject "enable JavaScript" / captcha pages
+    lower = text.lower()
+    blockers = ["enable javascript", "just a moment", "checking your browser",
+                "complete the security check", "please verify"]
+    for b in blockers:
+        if b in lower and len(text) < 2000:
+            return False
+    return True
 
 
 def _try_fetch(url: str, headers: dict) -> str | None:
     try:
-        resp = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+        resp = cffi_requests.get(url, headers=headers, timeout=15,
+                                 allow_redirects=True, impersonate="chrome")
         if resp.status_code == 200 and _has_article_content(resp.text):
             return resp.text
     except Exception:
@@ -541,7 +553,7 @@ def _fetch_via_google_cache(url: str) -> str | None:
     """Try Google's webcache."""
     try:
         cache_url = f"https://webcache.googleusercontent.com/search?q=cache:{url}"
-        resp = requests.get(cache_url, headers=BROWSER_HEADERS, timeout=15)
+        resp = cffi_requests.get(cache_url, impersonate="chrome", timeout=15)
         if resp.status_code == 200 and _has_article_content(resp.text):
             return resp.text
     except Exception:
@@ -571,11 +583,11 @@ def _fetch_via_archive_org(url: str) -> str | None:
     """Try archive.org Wayback Machine."""
     try:
         archive_api = f"https://archive.org/wayback/available?url={url}"
-        meta = requests.get(archive_api, timeout=10).json()
+        meta = cffi_requests.get(archive_api, impersonate="chrome", timeout=10).json()
         snap = meta.get("archived_snapshots", {}).get("closest", {})
         if snap.get("available"):
             snap_url = snap["url"]
-            resp = requests.get(snap_url, headers=BROWSER_HEADERS, timeout=15)
+            resp = cffi_requests.get(snap_url, impersonate="chrome", timeout=15)
             if resp.status_code == 200 and _has_article_content(resp.text):
                 return _clean_wayback_html(resp.text)
     except Exception:
@@ -588,12 +600,9 @@ def _fetch_via_archive_today(url: str) -> str | None:
     for domain in ("archive.ph", "archive.today", "archive.is"):
         try:
             search_url = f"https://{domain}/newest/{url}"
-            resp = requests.get(
+            resp = cffi_requests.get(
                 search_url,
-                headers={
-                    "User-Agent": BROWSER_HEADERS["User-Agent"],
-                    "Accept": "text/html,*/*",
-                },
+                impersonate="chrome",
                 timeout=15,
                 allow_redirects=True,
             )
@@ -616,7 +625,8 @@ def _fetch_via_google_amp(url: str) -> str | None:
     ]
     for amp_url in amp_variants:
         try:
-            resp = requests.get(amp_url, headers=BROWSER_HEADERS, timeout=10, allow_redirects=True)
+            resp = cffi_requests.get(amp_url, impersonate="chrome",
+                                     timeout=10, allow_redirects=True)
             if resp.status_code == 200 and _has_article_content(resp.text):
                 return resp.text
         except Exception:
@@ -633,46 +643,6 @@ def _resolve_url(src: str, base_url: str) -> str:
     if src.startswith("http"):
         return src
     return base_url + "/" + src
-
-
-def _extract_site_styles(soup: BeautifulSoup, url: str) -> dict:
-    """Extract style signals from the original page for theming the reader."""
-    parsed = urlparse(url)
-    base_url = f"{parsed.scheme}://{parsed.netloc}"
-
-    # Collect external stylesheet URLs
-    stylesheets: list[str] = []
-    for link in soup.find_all("link", rel="stylesheet"):
-        href = link.get("href", "")
-        if href:
-            stylesheets.append(_resolve_url(href, base_url))
-
-    # Collect inline <style> blocks
-    inline_styles: list[str] = []
-    for style_tag in soup.find_all("style"):
-        text = style_tag.get_text()
-        if text and len(text) < 50000:
-            inline_styles.append(text)
-
-    # Extract favicon
-    favicon = ""
-    icon_link = soup.find("link", rel=lambda r: r and "icon" in r)
-    if icon_link and icon_link.get("href"):
-        favicon = _resolve_url(icon_link["href"], base_url)
-
-    # Extract site name
-    site_name = parsed.netloc.replace("www.", "")
-    og_site = soup.find("meta", property="og:site_name")
-    if og_site and og_site.get("content"):
-        site_name = og_site["content"].strip()
-
-    return {
-        "stylesheets": stylesheets[:10],
-        "inline_styles": inline_styles[:5],
-        "favicon": favicon,
-        "site_name": site_name,
-        "base_url": base_url,
-    }
 
 
 def _extract_article_fallback(soup: BeautifulSoup) -> tuple[str, str]:
@@ -701,10 +671,33 @@ def _extract_article_fallback(soup: BeautifulSoup) -> tuple[str, str]:
 
 
 def _clean_article(html: str, url: str) -> dict:
-    """Extract article with readability and collect site style info."""
+    """Extract article with readability, return clean reader-mode HTML."""
     full_soup = BeautifulSoup(html, "lxml")
-    site_styles = _extract_site_styles(full_soup, url)
 
+    # Extract metadata
+    og_image = ""
+    og_img_tag = full_soup.find("meta", property="og:image")
+    if og_img_tag and og_img_tag.get("content"):
+        og_image = og_img_tag["content"]
+
+    og_desc = ""
+    og_desc_tag = full_soup.find("meta", property="og:description")
+    if og_desc_tag and og_desc_tag.get("content"):
+        og_desc = og_desc_tag["content"]
+
+    author = ""
+    author_tag = full_soup.find("meta", attrs={"name": "author"})
+    if author_tag and author_tag.get("content"):
+        author = author_tag["content"]
+
+    published = ""
+    for attr in ["article:published_time", "datePublished", "date"]:
+        pub_tag = full_soup.find("meta", property=attr) or full_soup.find("meta", attrs={"name": attr})
+        if pub_tag and pub_tag.get("content"):
+            published = pub_tag["content"][:10]
+            break
+
+    # Extract with readability
     doc = Document(html, url=url)
     title = doc.title()
     content_html = doc.summary()
@@ -739,8 +732,9 @@ def _clean_article(html: str, url: str) -> dict:
             parts = []
             for part in srcset.split(","):
                 part = part.strip()
-                parts.append(_resolve_url(part.split()[0], base_url) +
-                             (" " + " ".join(part.split()[1:]) if len(part.split()) > 1 else ""))
+                tokens = part.split()
+                parts.append(_resolve_url(tokens[0], base_url) +
+                             (" " + " ".join(tokens[1:]) if len(tokens) > 1 else ""))
             img["srcset"] = ", ".join(parts)
 
     for a_tag in soup.find_all("a"):
@@ -749,9 +743,9 @@ def _clean_article(html: str, url: str) -> dict:
             a_tag["href"] = _resolve_url(href, base_url)
         a_tag["target"] = "_blank"
 
-    # Remove noscript tags and JS/ad-blocker warnings
-    for noscript in soup.find_all("noscript"):
-        noscript.decompose()
+    # Remove noscript tags, scripts, and JS/ad-blocker warnings
+    for tag in soup.find_all(["noscript", "script", "style"]):
+        tag.decompose()
     for el in soup.find_all(string=re.compile(
         r"(enable\s+javascript|disable.*ad\s*block|turn off.*ad\s*block"
         r"|javascript\s+is\s+(required|disabled|not\s+enabled)"
@@ -762,15 +756,28 @@ def _clean_article(html: str, url: str) -> dict:
         if parent and len(parent.get_text(strip=True)) < 500:
             parent.decompose()
 
-    # Remove script tags (they can't execute in sandbox anyway)
-    for script in soup.find_all("script"):
-        script.decompose()
+    # Remove hidden elements and paywall overlays
+    for el in soup.find_all(attrs={"style": re.compile(r"display\s*:\s*none", re.I)}):
+        el.decompose()
+
+    # Get word count
+    final_text = soup.get_text(strip=True)
+    word_count = len(final_text.split())
+
+    site_name = parsed.netloc.replace("www.", "")
+    favicon = f"{parsed.scheme}://{parsed.netloc}/favicon.ico"
 
     return {
         "title": title,
         "content": str(soup),
         "source_url": url,
-        "site_styles": site_styles,
+        "site_name": site_name,
+        "favicon": favicon,
+        "author": author,
+        "published": published,
+        "description": og_desc,
+        "og_image": og_image,
+        "word_count": word_count,
     }
 
 
@@ -820,7 +827,8 @@ def _fetch_article_html(url: str) -> str | None:
 
     # 9. Last resort: accept whatever we get even if short
     try:
-        resp = requests.get(clean, headers=BROWSER_HEADERS, timeout=15, allow_redirects=True)
+        resp = cffi_requests.get(clean, impersonate="chrome", timeout=15,
+                                 allow_redirects=True)
         if resp.status_code == 200 and len(resp.text) > 200:
             return resp.text
     except Exception:
