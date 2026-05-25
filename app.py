@@ -975,7 +975,7 @@ def paywall_read():
 # ---------------------------------------------------------------------------
 
 from price_log import record_price_check
-from scraper import scrape_price as _scrape_price
+from scraper import prepare_product_url, scrape_price as _scrape_price
 
 
 def _shorten_url(url: str) -> str:
@@ -1036,19 +1036,22 @@ def price_track():
     """Add a product to track."""
     user = _get_current_user()
     data = request.get_json(force=True)
-    url = data.get("url", "").strip()
+    url = prepare_product_url(data.get("url", ""))
     target_price = data.get("target_price")
 
     if not url:
         return jsonify({"error": "Product URL is required"}), 400
+    if not url.startswith(("http://", "https://")):
+        return jsonify({"error": "Paste a valid product link (https://…)"}), 400
     if not target_price or float(target_price) <= 0:
         return jsonify({"error": "A valid target price is required"}), 400
 
     target_price = float(target_price)
     check_interval = _clamp_check_interval(data.get("check_interval", 3))
 
-    # Scrape current price
-    name, current_price, currency = _scrape_price(url)
+    # Scrape current price (resolves short links like amzn.in → amazon.in/dp/…)
+    name, current_price, currency, resolved_url = _scrape_price(url)
+    url = resolved_url or url
     if not currency:
         currency = _detect_currency(url)
 
@@ -1096,6 +1099,7 @@ def price_track():
     return jsonify({
         "id": product_id,
         "name": name,
+        "url": url,
         "current_price": current_price,
         "target_price": target_price,
         "currency": currency,
@@ -1185,7 +1189,7 @@ def price_check_now(product_id: str):
         return jsonify({"error": "Product not found"}), 404
 
     product = dict(product)
-    _, new_price, scraped_currency = _scrape_price(product["url"])
+    _, new_price, scraped_currency, resolved_url = _scrape_price(product["url"])
     now = datetime.now(timezone.utc).isoformat()
 
     if new_price is None:
@@ -1207,13 +1211,14 @@ def price_check_now(product_id: str):
     history.append({"price": new_price, "date": now})
     history = history[-100:]
 
-    currency = scraped_currency or product.get("currency") or _detect_currency(product["url"])
+    store_url = resolved_url or product["url"]
+    currency = scraped_currency or product.get("currency") or _detect_currency(store_url)
     conn.execute(
         """UPDATE tracked_products
            SET current_price = ?, last_checked = ?, price_history = ?,
-               error_count = 0, last_error = '', currency = ?
+               error_count = 0, last_error = '', currency = ?, url = ?
            WHERE id = ?""",
-        (new_price, now, json.dumps(history), currency, product_id),
+        (new_price, now, json.dumps(history), currency, store_url, product_id),
     )
     record_price_check(product_id, True, price=new_price, source="manual", conn=conn)
     product["currency"] = currency

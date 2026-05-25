@@ -156,7 +156,7 @@ def check_all_prices():
 
         scrape_error = None
         try:
-            _, new_price, scraped_currency = scrape_price(url)
+            _, new_price, scraped_currency, resolved_url = scrape_price(url)
         except Exception as e:
             new_price = None
             scrape_error = str(e)
@@ -188,13 +188,14 @@ def check_all_prices():
         history.append({"price": new_price, "date": now})
         history = history[-100:]
 
-        currency = scraped_currency or product.get("currency") or currency_from_url(url)
+        store_url = resolved_url or url
+        currency = scraped_currency or product.get("currency") or currency_from_url(store_url)
         conn.execute(
             """UPDATE tracked_products
                SET current_price = ?, last_checked = ?, price_history = ?,
-                   error_count = 0, last_error = '', currency = ?
+                   error_count = 0, last_error = '', currency = ?, url = ?
                WHERE id = ?""",
-            (new_price, now, json.dumps(history), currency, product["id"]),
+            (new_price, now, json.dumps(history), currency, store_url, product["id"]),
         )
         product["currency"] = currency
         record_price_check(

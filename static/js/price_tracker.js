@@ -5,12 +5,30 @@ document.addEventListener("DOMContentLoaded", () => {
   if (urlInput) {
     urlInput.addEventListener("input", updateCurrencyHint);
     urlInput.addEventListener("change", updateCurrencyHint);
+    urlInput.addEventListener("paste", (e) => {
+      setTimeout(() => {
+        const cleaned = extractUrlFromPaste(urlInput.value);
+        if (cleaned && cleaned !== urlInput.value) {
+          urlInput.value = cleaned;
+          updateCurrencyHint();
+        }
+      }, 0);
+    });
   }
 });
+
+function extractUrlFromPaste(text) {
+  const t = (text || "").trim().replace(/[\u200b-\u200d\ufeff\u00a0]/g, "");
+  if (!t) return "";
+  if (/^https?:\/\//i.test(t)) return t.split(/\s/)[0].replace(/[.,;:!?)\"']+$/, "");
+  const m = t.match(/https?:\/\/[^\s<>"']+/i);
+  return m ? m[0].replace(/[.,;:!?)\"']+$/, "") : t;
+}
 
 function currencyForUrl(url) {
   try {
     const host = new URL(url).hostname.toLowerCase();
+    if (host === "amzn.in" || host.endsWith(".amazon.in") || host.includes("flipkart")) return "₹";
     if (host.endsWith(".in") || host.includes("amazon.in") || host.includes("flipkart")) return "₹";
     if (host.endsWith(".co.uk") || host.endsWith(".uk")) return "£";
     if (host.endsWith(".de") || host.endsWith(".fr") || host.endsWith(".eu")) return "€";
@@ -107,7 +125,7 @@ function testNotification() {
 }
 
 function trackProduct() {
-  const url = document.getElementById("productUrl").value.trim();
+  const url = extractUrlFromPaste(document.getElementById("productUrl").value);
   const targetPrice = document.getElementById("targetPrice").value;
   const checkInterval = parseInt(document.getElementById("checkInterval").value, 10);
 

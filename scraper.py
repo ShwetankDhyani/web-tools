@@ -13,9 +13,102 @@ import random
 import re
 import time
 from functools import wraps
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
+
+# ---------------------------------------------------------------------------
+# URL normalization (short/mobile share links)
+# ---------------------------------------------------------------------------
+
+AMAZON_SHORT_HOSTS = frozenset({
+    "amzn.in", "amzn.to", "a.co", "amzn.eu", "amzn.asia", "amzn.com",
+})
+FLIPKART_SHORT_HOSTS = frozenset({"fkrt.it", "dl.flipkart.com"})
+_ASIN_RE = re.compile(
+    r"/(?:dp|gp/product|gp/aw/d|product)/([A-Z0-9]{10})",
+    re.I,
+)
+_STRIP_QUERY_KEYS = frozenset({
+    "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
+    "ref", "ref_", "tag", "linkCode", "psc", "smid",
+})
+
+
+def extract_url_from_text(text: str) -> str:
+    """Pull the first http(s) URL from pasted share text."""
+    if not text:
+        return ""
+    text = re.sub(r"[\u200b-\u200d\ufeff\u00a0]", "", text.strip())
+    if not text:
+        return ""
+    if text.startswith(("http://", "https://")):
+        return _trim_url_token(text.split()[0])
+    match = re.search(r"https?://[^\s<>\"']+", text, re.I)
+    return _trim_url_token(match.group(0)) if match else text
+
+
+def _trim_url_token(url: str) -> str:
+    return url.rstrip(".,;:!?)\"]'")
+
+
+def is_amazon_host(host: str) -> bool:
+    host = host.lower().removeprefix("www.")
+    return "amazon" in host or host in AMAZON_SHORT_HOSTS
+
+
+def is_flipkart_host(host: str) -> bool:
+    host = host.lower().removeprefix("www.")
+    return "flipkart" in host or host in FLIPKART_SHORT_HOSTS
+
+
+def canonicalize_product_url(url: str) -> str:
+    """Strip tracking params and canonicalize known store product URLs."""
+    if not url:
+        return url
+    parsed = urlparse(url)
+    host = parsed.netloc.lower().removeprefix("www.")
+    path = parsed.path or ""
+
+    if is_amazon_host(host):
+        match = _ASIN_RE.search(path)
+        if match:
+            asin = match.group(1).upper()
+            if host == "amzn.in" or ".in" in host or "amazon.in" in host:
+                base = "https://www.amazon.in"
+            elif host in ("a.co", "amzn.to") or host.endswith(".com"):
+                base = "https://www.amazon.com"
+            elif host.endswith(".co.uk") or "amazon.co.uk" in host:
+                base = "https://www.amazon.co.uk"
+            else:
+                base = f"https://www.{host}" if "amazon" in host else "https://www.amazon.in"
+            return f"{base}/dp/{asin}"
+        if "amazon" in host:
+            return _strip_tracking_params(url)
+
+    if is_flipkart_host(host):
+        return _strip_tracking_params(url)
+
+    return _strip_tracking_params(url)
+
+
+def _strip_tracking_params(url: str) -> str:
+    parsed = urlparse(url)
+    if not parsed.query:
+        return url
+    params = parse_qs(parsed.query, keep_blank_values=False)
+    filtered = {k: v for k, v in params.items() if k.lower() not in _STRIP_QUERY_KEYS}
+    if not filtered and parsed.query:
+        keep = {k: v for k, v in params.items() if k.lower() in ("th", "psc")}
+        filtered = keep
+    if not filtered:
+        return urlunparse(parsed._replace(query=""))
+    return urlunparse(parsed._replace(query=urlencode(filtered, doseq=True)))
+
+
+def prepare_product_url(raw: str) -> str:
+    """Clean pasted text into a bare URL (resolve happens in stealth_fetch)."""
+    return extract_url_from_text(raw)
 from curl_cffi import requests as cffi_requests
 
 logger = logging.getLogger("scraper")
@@ -161,10 +254,10 @@ def _get_proxy() -> str | None:
 
 
 @retry_with_backoff(max_retries=3, base_delay=2.0)
-def stealth_fetch(url: str) -> str:
+def stealth_fetch(url: str) -> tuple[str, str]:
     """
     Fetch a URL using curl_cffi with TLS fingerprint spoofing.
-    Returns the HTML text on success.
+    Returns (HTML text, final URL after redirects).
     Raises RetryableError for 403/429/503.
     Raises CaptchaDetected if a CAPTCHA page is detected.
     """
@@ -173,10 +266,10 @@ def stealth_fetch(url: str) -> str:
         api_url = SCRAPER_API_URL.format(key=SCRAPER_API_KEY, url=url)
         resp = cffi_requests.get(api_url, timeout=30)
         if resp.status_code == 200:
-            return resp.text
+            return resp.text, url
         if resp.status_code in (403, 429, 503):
             raise RetryableError(resp.status_code)
-        return ""
+        return "", url
 
     headers = _generate_headers()
     impersonate = random.choice(BROWSER_FINGERPRINTS)
@@ -194,14 +287,16 @@ def stealth_fetch(url: str) -> str:
         )
     except Exception as e:
         logger.error("Request failed for %s: %s", url, e)
-        return ""
+        return "", url
+
+    final_url = getattr(resp, "url", None) or url
 
     if resp.status_code in (403, 429, 503):
         raise RetryableError(resp.status_code)
 
     if resp.status_code != 200:
         logger.warning("HTTP %d for %s", resp.status_code, url)
-        return ""
+        return "", final_url
 
     html = resp.text
 
@@ -214,7 +309,7 @@ def stealth_fetch(url: str) -> str:
     if any(sig in lower_html for sig in captcha_signals) and len(html) < 20000:
         raise CaptchaDetected(f"CAPTCHA detected at {url}")
 
-    return html
+    return html, final_url
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +337,10 @@ def currency_from_text(text: str) -> str | None:
 def currency_from_url(url: str) -> str:
     """Default currency from store domain."""
     domain = urlparse(url).netloc.lower()
+    if is_amazon_host(domain) and (domain == "amzn.in" or ".in" in domain or "amazon.in" in domain):
+        return "₹"
+    if domain in ("a.co", "amzn.to") or domain.endswith("amazon.com"):
+        return "$"
     if ".in" in domain or "amazon.in" in domain or "flipkart" in domain or "desidime" in domain:
         return "₹"
     if domain.endswith(".co.uk") or domain.endswith(".uk"):
@@ -421,44 +520,49 @@ def _parse_desidime(soup: BeautifulSoup) -> tuple[str | None, float | None, str 
 # Main scraping function
 # ---------------------------------------------------------------------------
 
-def scrape_price(url: str) -> tuple[str | None, float | None, str]:
+def scrape_price(url: str) -> tuple[str | None, float | None, str, str]:
     """
     Scrape product name, price, and currency from a URL.
-    Returns (name, price, currency). Price/name may be None on failure.
+    Returns (name, price, currency, canonical_url). Price/name may be None on failure.
     """
+    canonical_url = url
     try:
-        html = stealth_fetch(url)
+        html, final_url = stealth_fetch(url)
+        if final_url and final_url != url:
+            logger.info("Resolved %s → %s", url[:60], final_url[:80])
+        page_url = canonicalize_product_url(final_url or url)
+        canonical_url = page_url
         if not html:
             logger.warning("Empty response from %s", url)
-            return None, None, currency_from_url(url)
+            return None, None, currency_from_url(page_url), canonical_url
     except CaptchaDetected:
         logger.error("CAPTCHA detected at %s — skipping", url)
-        return None, None, currency_from_url(url)
+        return None, None, currency_from_url(url), url
     except RetryableError as e:
         logger.error("Failed after retries for %s: HTTP %s", url, e.status_code)
-        return None, None, currency_from_url(url)
+        return None, None, currency_from_url(url), url
     except Exception as e:
         logger.error("Unexpected fetch error for %s: %s", url, e)
-        return None, None, currency_from_url(url)
+        return None, None, currency_from_url(url), url
 
     try:
         soup = BeautifulSoup(html, "lxml")
     except Exception as e:
-        logger.error("HTML parsing failed for %s: %s", url, e)
-        return None, None, currency_from_url(url)
+        logger.error("HTML parsing failed for %s: %s", page_url, e)
+        return None, None, currency_from_url(page_url), canonical_url
 
-    domain = urlparse(url).netloc.lower()
+    domain = urlparse(page_url).netloc.lower()
     name = None
     price = None
-    currency = currency_from_url(url)
+    currency = currency_from_url(page_url)
 
-    # Site-specific parsing
+    # Site-specific parsing (use final URL host — short links like amzn.in redirect to amazon.*)
     try:
-        if "amazon" in domain:
-            name, price, cur = _parse_amazon(soup, url)
+        if is_amazon_host(domain):
+            name, price, cur = _parse_amazon(soup, page_url)
             if cur:
                 currency = cur
-        elif "flipkart" in domain:
+        elif is_flipkart_host(domain):
             name, price, cur = _parse_flipkart(soup)
             if cur:
                 currency = cur
@@ -467,7 +571,7 @@ def scrape_price(url: str) -> tuple[str | None, float | None, str]:
             if cur:
                 currency = cur
     except Exception as e:
-        logger.error("Site-specific parsing error for %s: %s", url, e)
+        logger.error("Site-specific parsing error for %s: %s", page_url, e)
 
     # Fallback: product title from meta tags
     if not name:
@@ -534,4 +638,4 @@ def scrape_price(url: str) -> tuple[str | None, float | None, str]:
         except Exception as e:
             logger.debug("Regex price parsing failed: %s", e)
 
-    return name, price, currency
+    return name, price, currency, canonical_url
