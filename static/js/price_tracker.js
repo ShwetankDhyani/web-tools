@@ -1,7 +1,56 @@
 document.addEventListener("DOMContentLoaded", () => {
   loadUserInfo();
   loadProducts();
+  const urlInput = document.getElementById("productUrl");
+  if (urlInput) {
+    urlInput.addEventListener("input", updateCurrencyHint);
+    urlInput.addEventListener("change", updateCurrencyHint);
+  }
 });
+
+function currencyForUrl(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.endsWith(".in") || host.includes("amazon.in") || host.includes("flipkart")) return "₹";
+    if (host.endsWith(".co.uk") || host.endsWith(".uk")) return "£";
+    if (host.endsWith(".de") || host.endsWith(".fr") || host.endsWith(".eu")) return "€";
+    if (host.endsWith(".jp")) return "¥";
+  } catch {
+    /* ignore */
+  }
+  return "$";
+}
+
+function updateCurrencyHint() {
+  const url = document.getElementById("productUrl")?.value.trim();
+  const label = document.getElementById("targetPriceLabel");
+  if (!label || !url) {
+    if (label) label.textContent = "Notify when price drops below";
+    return;
+  }
+  const cur = currencyForUrl(url);
+  label.textContent = `Target price (${cur})`;
+}
+
+function formatMoney(amount, currency) {
+  const c = currency || "₹";
+  const locale = c === "₹" ? "en-IN" : undefined;
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return "—";
+  return (
+    c +
+    n.toLocaleString(locale, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    })
+  );
+}
+
+function escapeHtml(s) {
+  const d = document.createElement("div");
+  d.textContent = s == null ? "" : String(s);
+  return d.innerHTML;
+}
 
 function loadUserInfo() {
   fetch("/api/auth/me")
@@ -95,21 +144,21 @@ function trackProduct() {
       }
 
       status.classList.remove("hidden");
-      const cur = data.currency || "$";
-      let msg = `<strong>${data.name || "Product"}</strong> is now being tracked every ${data.check_interval || 3} min.`;
+      const cur = data.currency || currencyForUrl(url);
+      let msg = `<strong>${escapeHtml(data.name || "Product")}</strong> is now tracked every ${data.check_interval || 3} min.`;
       if (data.current_price !== null) {
-        msg += ` Current price: <strong>${cur}${data.current_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>.`;
+        msg += ` Current price: <strong>${formatMoney(data.current_price, cur)}</strong>.`;
       } else {
         msg += " Could not detect the current price — we'll keep checking.";
       }
       if (data.already_below) {
-        msg +=
-          ' <span class="price-alert">The price is already at or below your target!</span>';
+        msg += ' <span class="price-alert">Already at or below your target.</span>';
       }
       status.innerHTML = msg;
 
       document.getElementById("productUrl").value = "";
       document.getElementById("targetPrice").value = "";
+      updateCurrencyHint();
 
       loadProducts();
     })
@@ -142,21 +191,20 @@ function loadProducts() {
 }
 
 function renderProduct(p) {
+  const cur = p.currency || currencyForUrl(p.url);
   const priceClass =
     p.current_price !== null && p.current_price <= p.target_price
       ? "price-below"
       : "price-above";
 
-  const cur = p.currency || "$";
   const priceDisplay =
-    p.current_price !== null ? `${cur}${p.current_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : "—";
+    p.current_price !== null ? formatMoney(p.current_price, cur) : "—";
 
   const lastChecked = p.last_checked
     ? timeAgo(new Date(p.last_checked))
     : "Never";
 
   const interval = p.check_interval || 3;
-  const intervalLabel = `${interval} min`;
 
   let statusBadge;
   if (p.notified) {
@@ -185,45 +233,50 @@ function renderProduct(p) {
         return `${x},${y}`;
       })
       .join(" ");
-    chartSvg = `<svg class="price-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+    chartSvg = `<svg class="price-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
       <polyline points="${points}" fill="none" stroke="#6c5ce7" stroke-width="2"/>
     </svg>`;
   }
 
-  const savings =
-    p.current_price !== null
-      ? (p.current_price - p.target_price).toFixed(2)
-      : null;
-  const savingsHtml =
-    savings !== null && parseFloat(savings) > 0
-      ? `<span class="price-diff">${cur}${parseFloat(savings).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} above target</span>`
-      : savings !== null && parseFloat(savings) <= 0
-        ? `<span class="price-diff price-diff-good">${cur}${Math.abs(parseFloat(savings)).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} below target</span>`
-        : "";
+  let savingsHtml = "";
+  if (p.current_price !== null) {
+    const diff = p.current_price - p.target_price;
+    if (diff > 0) {
+      savingsHtml = `<p class="price-diff">${formatMoney(diff, cur)} above target</p>`;
+    } else if (diff <= 0) {
+      savingsHtml = `<p class="price-diff price-diff-good">${formatMoney(Math.abs(diff), cur)} below target</p>`;
+    }
+  }
+
+  const safeName = escapeHtml(p.name || "Unknown Product");
+  const safeUrl = escapeHtml(truncateUrl(p.url));
+  const fullUrl = escapeHtml(p.url);
 
   return `
-    <div class="product-card">
-      <div class="product-info">
+    <article class="product-card">
+      <div class="product-main">
         <div class="product-header">
-          <h4>${p.name || "Unknown Product"}</h4>
+          <h4 class="product-title">${safeName}</h4>
           ${statusBadge}
         </div>
-        <a href="${p.url}" target="_blank" rel="noopener" class="product-url">${truncateUrl(p.url)}</a>
-        <div class="product-prices">
+        <p class="product-url-line">
+          <a href="${fullUrl}" target="_blank" rel="noopener noreferrer" class="product-url">${safeUrl}</a>
+        </p>
+        <div class="product-prices-grid">
           <div class="price-item">
             <span class="price-label">Current</span>
             <span class="price-value ${priceClass}">${priceDisplay}</span>
           </div>
           <div class="price-item">
             <span class="price-label">Target</span>
-            <span class="price-value">${cur}${p.target_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+            <span class="price-value">${formatMoney(p.target_price, cur)}</span>
           </div>
-          ${savingsHtml}
         </div>
+        ${savingsHtml}
         <div class="product-meta">
           <span>Checked ${lastChecked}</span>
-          <span class="meta-sep">·</span>
-          <span>Every ${intervalLabel}</span>
+          <span class="meta-sep" aria-hidden="true">·</span>
+          <span>Every ${interval} min</span>
         </div>
         <div class="interval-edit">
           <label>Check every</label>
@@ -232,10 +285,10 @@ function renderProduct(p) {
         ${chartSvg}
       </div>
       <div class="product-actions">
-        <button class="btn-small btn-secondary" onclick="checkNow('${p.id}', this)" title="Check price now">Check Now</button>
-        <button class="btn-small btn-secondary" onclick="confirmDelete('${p.id}', '${(p.name || "this product").replace(/'/g, "\\'")}')" title="Stop tracking">Remove</button>
+        <button type="button" class="btn-small btn-secondary" onclick="checkNow('${p.id}', this)">Check now</button>
+        <button type="button" class="btn-small btn-secondary" onclick="confirmDelete('${p.id}', ${JSON.stringify(p.name || "this product")})">Remove</button>
       </div>
-    </div>
+    </article>
   `;
 }
 
@@ -279,22 +332,22 @@ function truncateUrl(url) {
   try {
     const u = new URL(url);
     let path = u.pathname;
-    if (path.length > 40) path = path.substring(0, 40) + "...";
+    if (path.length > 36) path = path.substring(0, 36) + "…";
     return u.hostname + path;
   } catch {
-    return url.length > 60 ? url.substring(0, 60) + "..." : url;
+    return url.length > 48 ? url.substring(0, 48) + "…" : url;
   }
 }
 
 function checkNow(productId, btn) {
   btn.disabled = true;
-  btn.textContent = "Checking...";
+  btn.textContent = "Checking…";
 
   fetch(`/api/price/check/${productId}`, { method: "POST" })
     .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
     .then(({ ok, data }) => {
       btn.disabled = false;
-      btn.textContent = "Check Now";
+      btn.textContent = "Check now";
 
       if (!ok) {
         showError(data.error || "Could not check price.");
@@ -306,13 +359,13 @@ function checkNow(productId, btn) {
       if (data.below_target) {
         const status = document.getElementById("trackStatus");
         status.classList.remove("hidden");
-        const c = data.currency || "$";
-        status.innerHTML = `<span class="price-alert">Price dropped to ${c}${data.current_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} — below your target of ${c}${data.target_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}!</span>`;
+        const c = data.currency || "₹";
+        status.innerHTML = `<span class="price-alert">Price is ${formatMoney(data.current_price, c)} — below your target of ${formatMoney(data.target_price, c)}.</span>`;
       }
     })
     .catch(() => {
       btn.disabled = false;
-      btn.textContent = "Check Now";
+      btn.textContent = "Check now";
     });
 }
 

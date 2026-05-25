@@ -221,6 +221,42 @@ def stealth_fetch(url: str) -> str:
 # Price parsing utilities
 # ---------------------------------------------------------------------------
 
+def currency_from_text(text: str) -> str | None:
+    """Detect currency symbol from price text (e.g. a-offscreen content)."""
+    if not text:
+        return None
+    t = text.strip()
+    if "₹" in t or re.search(r"\bRs\.?\s*\d", t, re.I) or "INR" in t.upper():
+        return "₹"
+    if "€" in t or "EUR" in t.upper():
+        return "€"
+    if "£" in t or "GBP" in t.upper():
+        return "£"
+    if "¥" in t or "JPY" in t.upper():
+        return "¥"
+    if "$" in t or "USD" in t.upper():
+        return "$"
+    return None
+
+
+def currency_from_url(url: str) -> str:
+    """Default currency from store domain."""
+    domain = urlparse(url).netloc.lower()
+    if ".in" in domain or "amazon.in" in domain or "flipkart" in domain or "desidime" in domain:
+        return "₹"
+    if domain.endswith(".co.uk") or domain.endswith(".uk"):
+        return "£"
+    if any(domain.endswith(s) for s in (".eu", ".de", ".fr", ".it", ".es")):
+        return "€"
+    if domain.endswith(".co.jp") or domain.endswith(".jp"):
+        return "¥"
+    if domain.endswith(".com.au") or domain.endswith(".au"):
+        return "A$"
+    if domain.endswith(".ca"):
+        return "C$"
+    return "$"
+
+
 def parse_price(text: str) -> float | None:
     """Extract a numeric price from a text string."""
     if not text:
@@ -272,10 +308,20 @@ def _extract_price_from_ld(data) -> float | None:
 # Site-specific parsers
 # ---------------------------------------------------------------------------
 
-def _parse_amazon(soup: BeautifulSoup) -> tuple[str | None, float | None]:
+def _price_from_offscreen(el) -> tuple[float | None, str | None]:
+    if not el:
+        return None, None
+    raw = el.get_text()
+    return parse_price(raw), currency_from_text(raw)
+
+
+def _parse_amazon(soup: BeautifulSoup, url: str = "") -> tuple[str | None, float | None, str | None]:
     """Parse product name and price from Amazon."""
     name = None
     price = None
+    currency = None
+    domain = urlparse(url).netloc.lower() if url else ""
+    india = ".in" in domain or "amazon.in" in domain
 
     title_el = soup.find("span", id="productTitle")
     if title_el:
@@ -289,30 +335,45 @@ def _parse_amazon(soup: BeautifulSoup) -> tuple[str | None, float | None]:
             if not core_el:
                 core_el = container.select_one("span.a-price span.a-offscreen")
             if core_el:
-                price = parse_price(core_el.get_text())
+                price, currency = _price_from_offscreen(core_el)
                 if price is not None:
-                    return name, price
+                    return name, price, currency
 
-    # Priority 2: specific price block IDs
-    for pid in ("tp_price_block_total_price_ww", "priceblock_ourprice", "priceblock_dealprice"):
+    # Priority 2: specific price block IDs (skip worldwide USD block on Amazon India)
+    block_ids = ["priceblock_ourprice", "priceblock_dealprice"]
+    if not india:
+        block_ids.insert(0, "tp_price_block_total_price_ww")
+    for pid in block_ids:
         el = soup.find(id=pid)
         if el:
             offscreen = el.find("span", class_="a-offscreen")
-            price = parse_price((offscreen or el).get_text())
+            price, currency = _price_from_offscreen(offscreen or el)
             if price is not None:
-                return name, price
+                if india and currency == "$":
+                    continue
+                return name, price, currency
 
-    # Priority 3: apex price identifier class (deal/sale price)
+    # Priority 3: any a-offscreen with local currency on India sites
+    if india:
+        for off in soup.select("span.a-offscreen"):
+            raw = off.get_text()
+            if "₹" not in raw and "INR" not in raw.upper():
+                continue
+            price, currency = _price_from_offscreen(off)
+            if price is not None:
+                return name, price, currency or "₹"
+
     apex_price = soup.select_one("span.a-price.apex-core-price-identifier span.a-offscreen")
     if apex_price:
-        price = parse_price(apex_price.get_text())
+        price, currency = _price_from_offscreen(apex_price)
         if price is not None:
-            return name, price
+            if not (india and currency == "$"):
+                return name, price, currency
 
-    return name, price
+    return name, price, currency
 
 
-def _parse_flipkart(soup: BeautifulSoup) -> tuple[str | None, float | None]:
+def _parse_flipkart(soup: BeautifulSoup) -> tuple[str | None, float | None, str | None]:
     """Parse product name and price from Flipkart."""
     name = None
     price = None
@@ -329,6 +390,7 @@ def _parse_flipkart(soup: BeautifulSoup) -> tuple[str | None, float | None]:
             name = title_el.get_text(strip=True)
 
     # Flipkart price (class names change frequently)
+    currency = "₹"
     for cls in ("Nx9bqj", "_30jeq3", "CxhGGd"):
         el = soup.find("div", class_=cls)
         if el:
@@ -336,10 +398,10 @@ def _parse_flipkart(soup: BeautifulSoup) -> tuple[str | None, float | None]:
             if price is not None:
                 break
 
-    return name, price
+    return name, price, currency
 
 
-def _parse_desidime(soup: BeautifulSoup) -> tuple[str | None, float | None]:
+def _parse_desidime(soup: BeautifulSoup) -> tuple[str | None, float | None, str | None]:
     """Parse product name and price from DesiDime."""
     name = None
     price = None
@@ -352,52 +414,58 @@ def _parse_desidime(soup: BeautifulSoup) -> tuple[str | None, float | None]:
     if price_el:
         price = parse_price(price_el.get_text())
 
-    return name, price
+    return name, price, "₹"
 
 
 # ---------------------------------------------------------------------------
 # Main scraping function
 # ---------------------------------------------------------------------------
 
-def scrape_price(url: str) -> tuple[str | None, float | None]:
+def scrape_price(url: str) -> tuple[str | None, float | None, str]:
     """
-    Scrape product name and price from a URL.
-    Returns (name, price). Both may be None on failure.
-    Stateless — executes once and returns.
+    Scrape product name, price, and currency from a URL.
+    Returns (name, price, currency). Price/name may be None on failure.
     """
     try:
         html = stealth_fetch(url)
         if not html:
             logger.warning("Empty response from %s", url)
-            return None, None
+            return None, None, currency_from_url(url)
     except CaptchaDetected:
         logger.error("CAPTCHA detected at %s — skipping", url)
-        return None, None
+        return None, None, currency_from_url(url)
     except RetryableError as e:
         logger.error("Failed after retries for %s: HTTP %s", url, e.status_code)
-        return None, None
+        return None, None, currency_from_url(url)
     except Exception as e:
         logger.error("Unexpected fetch error for %s: %s", url, e)
-        return None, None
+        return None, None, currency_from_url(url)
 
     try:
         soup = BeautifulSoup(html, "lxml")
     except Exception as e:
         logger.error("HTML parsing failed for %s: %s", url, e)
-        return None, None
+        return None, None, currency_from_url(url)
 
     domain = urlparse(url).netloc.lower()
     name = None
     price = None
+    currency = currency_from_url(url)
 
     # Site-specific parsing
     try:
         if "amazon" in domain:
-            name, price = _parse_amazon(soup)
+            name, price, cur = _parse_amazon(soup, url)
+            if cur:
+                currency = cur
         elif "flipkart" in domain:
-            name, price = _parse_flipkart(soup)
+            name, price, cur = _parse_flipkart(soup)
+            if cur:
+                currency = cur
         elif "desidime" in domain:
-            name, price = _parse_desidime(soup)
+            name, price, cur = _parse_desidime(soup)
+            if cur:
+                currency = cur
     except Exception as e:
         logger.error("Site-specific parsing error for %s: %s", url, e)
 
@@ -442,18 +510,28 @@ def scrape_price(url: str) -> tuple[str | None, float | None]:
     if price is None:
         try:
             text = soup.get_text()[:10000]
-            price_matches = re.findall(
-                r'(?:[$\u20ac\u00a3\u20b9\u00a5])\s*([\d,]+(?:\.\d{1,2})?)|'
-                r'([\d,]+(?:\.\d{1,2})?)\s*(?:USD|EUR|GBP|INR)',
+            sym_match = re.search(
+                r'([$\u20ac\u00a3\u20b9\u00a5])\s*([\d,]+(?:\.\d{1,2})?)',
                 text,
             )
-            for m in price_matches:
-                val = m[0] or m[1]
-                p = parse_price(val)
-                if p and p > 0:
-                    price = p
-                    break
+            if sym_match:
+                cur = currency_from_text(sym_match.group(1))
+                if cur:
+                    currency = cur
+                price = parse_price(sym_match.group(0))
+            if price is None:
+                for m in re.finditer(
+                    r'([\d,]+(?:\.\d{1,2})?)\s*(USD|EUR|GBP|INR)',
+                    text,
+                    re.I,
+                ):
+                    p = parse_price(m.group(1))
+                    if p and p > 0:
+                        price = p
+                        code = m.group(2).upper()
+                        currency = {"INR": "₹", "GBP": "£", "EUR": "€", "USD": "$"}.get(code, currency)
+                        break
         except Exception as e:
             logger.debug("Regex price parsing failed: %s", e)
 
-    return name, price
+    return name, price, currency

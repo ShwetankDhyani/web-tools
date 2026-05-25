@@ -142,6 +142,7 @@ def _init_db():
             pass  # Column already exists
 
     _backfill_check_counts(conn)
+    _fix_product_currencies(conn)
     conn.close()
 
 
@@ -961,16 +962,20 @@ from scraper import scrape_price as _scrape_price
 
 def _detect_currency(url: str) -> str:
     """Detect currency symbol from URL domain."""
-    domain = urlparse(url).netloc.lower()
-    if domain.endswith(".in") or "amazon.in" in domain or "flipkart" in domain:
-        return "₹"
-    if domain.endswith(".co.uk") or domain.endswith(".uk"):
-        return "£"
-    if domain.endswith(".eu") or domain.endswith(".de") or domain.endswith(".fr") or domain.endswith(".it") or domain.endswith(".es"):
-        return "€"
-    if domain.endswith(".co.jp") or domain.endswith(".jp"):
-        return "¥"
-    return "$"
+    from scraper import currency_from_url
+    return currency_from_url(url)
+
+
+def _fix_product_currencies(conn: sqlite3.Connection):
+    """Correct currency for existing rows based on product URL."""
+    for row in conn.execute("SELECT id, url, currency FROM tracked_products"):
+        expected = _detect_currency(row["url"])
+        if row["currency"] != expected:
+            conn.execute(
+                "UPDATE tracked_products SET currency = ? WHERE id = ?",
+                (expected, row["id"]),
+            )
+    conn.commit()
 
 
 def _shorten_url(url: str) -> str:
@@ -1043,8 +1048,9 @@ def price_track():
     check_interval = _clamp_check_interval(data.get("check_interval", 3))
 
     # Scrape current price
-    name, current_price = _scrape_price(url)
-    currency = _detect_currency(url)
+    name, current_price, currency = _scrape_price(url)
+    if not currency:
+        currency = _detect_currency(url)
 
     product_id = uuid.uuid4().hex[:12]
     now = datetime.now(timezone.utc).isoformat()
@@ -1179,7 +1185,7 @@ def price_check_now(product_id: str):
         return jsonify({"error": "Product not found"}), 404
 
     product = dict(product)
-    _, new_price = _scrape_price(product["url"])
+    _, new_price, scraped_currency = _scrape_price(product["url"])
     now = datetime.now(timezone.utc).isoformat()
 
     if new_price is None:
@@ -1201,14 +1207,16 @@ def price_check_now(product_id: str):
     history.append({"price": new_price, "date": now})
     history = history[-100:]
 
+    currency = scraped_currency or product.get("currency") or _detect_currency(product["url"])
     conn.execute(
         """UPDATE tracked_products
            SET current_price = ?, last_checked = ?, price_history = ?,
-               error_count = 0, last_error = ''
+               error_count = 0, last_error = '', currency = ?
            WHERE id = ?""",
-        (new_price, now, json.dumps(history), product_id),
+        (new_price, now, json.dumps(history), currency, product_id),
     )
     record_price_check(product_id, True, price=new_price, source="manual", conn=conn)
+    product["currency"] = currency
 
     notified = False
     if new_price <= product["target_price"] and not product["notified"]:
@@ -1222,6 +1230,7 @@ def price_check_now(product_id: str):
     return jsonify({
         "current_price": new_price,
         "target_price": product["target_price"],
+        "currency": currency,
         "below_target": new_price <= product["target_price"],
         "notified": notified,
     })

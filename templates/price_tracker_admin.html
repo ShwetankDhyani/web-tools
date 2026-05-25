@@ -158,7 +158,7 @@ function loadCheckHistory() {
           <tbody>
             ${rows.map(r => {
               const ok = r.success === 1;
-              const cur = r.currency || "$";
+              const cur = r.currency || "₹";
               const detail = ok && r.price != null
                 ? `${cur}${Number(r.price).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
                 : (r.error || "—");
@@ -267,7 +267,7 @@ function renderAdminRow(p) {
     ? `<span class="error-count" title="${p.last_error || ''}">${p.error_count} streak</span>`
     : '<span class="no-errors">0</span>';
 
-  const cur = p.currency || "$";
+  const cur = p.currency || "₹";
   const priceDisplay = p.current_price !== null ? `${cur}${p.current_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : "—";
   const lastChecked = p.last_checked ? timeAgo(new Date(p.last_checked)) : "Never";
   const name = p.name || "Unknown";
