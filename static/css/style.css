@@ -1027,6 +1027,56 @@ img { max-width: 100%; height: auto; }
 }
 .admin-link a:hover { text-decoration: underline; }
 
+.error-page {
+  text-align: center;
+  padding: 4rem 1rem;
+  max-width: 520px;
+  margin: 0 auto;
+}
+.error-code {
+  font-size: 5rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1;
+  margin-bottom: 0.5rem;
+}
+.error-page h1 { font-size: 1.75rem; margin-bottom: 0.75rem; }
+.error-msg { color: var(--text-muted); margin-bottom: 2rem; line-height: 1.6; }
+.error-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.form-field select,
+.interval-edit select {
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: var(--font);
+  outline: none;
+  cursor: pointer;
+}
+.interval-edit {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+}
+.interval-edit label { color: var(--text-muted); }
+.interval-edit select { width: auto; min-width: 100px; padding: 0.35rem 0.5rem; font-size: 0.8rem; }
+.product-meta .meta-sep { opacity: 0.5; }
+.user-info .badge-admin { margin-left: 0.5rem; vertical-align: middle; }
+
 /* ---- Login Page ---- */
 .login-page {
   max-width: 440px;

@@ -13,7 +13,8 @@ function loadUserInfo() {
       }
       document.getElementById("currentUser").textContent = data.username;
       if (data.is_admin) {
-        document.getElementById("adminLink").style.display = "";
+        document.getElementById("adminBadge").classList.remove("hidden");
+        document.getElementById("adminLink").classList.remove("hidden");
       }
     });
 }
@@ -56,6 +57,7 @@ function testNotification() {
 function trackProduct() {
   const url = document.getElementById("productUrl").value.trim();
   const targetPrice = document.getElementById("targetPrice").value;
+  const checkInterval = parseInt(document.getElementById("checkInterval").value, 10);
 
   if (!url || !targetPrice) {
     showError("Please fill in both fields.");
@@ -76,6 +78,7 @@ function trackProduct() {
     body: JSON.stringify({
       url: url,
       target_price: parseFloat(targetPrice),
+      check_interval: checkInterval,
     }),
   })
     .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
@@ -90,7 +93,7 @@ function trackProduct() {
 
       status.classList.remove("hidden");
       const cur = data.currency || "$";
-      let msg = `<strong>${data.name || "Product"}</strong> is now being tracked.`;
+      let msg = `<strong>${data.name || "Product"}</strong> is now being tracked every ${data.check_interval || 3} min.`;
       if (data.current_price !== null) {
         msg += ` Current price: <strong>${cur}${data.current_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>.`;
       } else {
@@ -148,6 +151,9 @@ function renderProduct(p) {
   const lastChecked = p.last_checked
     ? timeAgo(new Date(p.last_checked))
     : "Never";
+
+  const interval = p.check_interval || 3;
+  const intervalLabel = `${interval} min`;
 
   let statusBadge;
   if (p.notified) {
@@ -213,6 +219,12 @@ function renderProduct(p) {
         </div>
         <div class="product-meta">
           <span>Checked ${lastChecked}</span>
+          <span class="meta-sep">·</span>
+          <span>Every ${intervalLabel}</span>
+        </div>
+        <div class="interval-edit">
+          <label>Check every</label>
+          <select onchange="updateInterval('${p.id}', this)">${intervalOptions(interval)}</select>
         </div>
         ${chartSvg}
       </div>
@@ -222,6 +234,31 @@ function renderProduct(p) {
       </div>
     </div>
   `;
+}
+
+function intervalOptions(selected) {
+  const sel = selected || 3;
+  let html = "";
+  for (let m = 2; m <= 60; m++) {
+    html += `<option value="${m}"${m === sel ? " selected" : ""}>${m} min</option>`;
+  }
+  return html;
+}
+
+function updateInterval(productId, selectEl) {
+  const interval = parseInt(selectEl.value, 10);
+  fetch(`/api/price/update/${productId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ check_interval: interval }),
+  })
+    .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
+    .then(({ ok, data }) => {
+      if (!ok) {
+        showError(data.error || "Could not update interval.");
+        loadProducts();
+      }
+    });
 }
 
 function timeAgo(date) {

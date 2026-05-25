@@ -21,7 +21,7 @@ import sqlite3
 import sys
 import time
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 import requests
@@ -109,8 +109,27 @@ def _send_telegram_alert(product: dict, new_price: float) -> bool:
 # Main check
 # ---------------------------------------------------------------------------
 
+def _is_due(product: dict, now: datetime) -> bool:
+    interval = product.get("check_interval") or 3
+    try:
+        interval = max(2, min(60, int(interval)))
+    except (TypeError, ValueError):
+        interval = 3
+
+    last = product.get("last_checked")
+    if not last:
+        return True
+    try:
+        last_dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
+        if last_dt.tzinfo is None:
+            last_dt = last_dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return True
+    return now >= last_dt + timedelta(minutes=interval)
+
+
 def check_all_prices():
-    """Check prices for all un-notified tracked products, then exit."""
+    """Check prices for due, un-notified tracked products, then exit."""
     conn = _get_db()
     products = conn.execute(
         "SELECT * FROM tracked_products WHERE notified = 0"
@@ -121,10 +140,16 @@ def check_all_prices():
         logger.info("No products to check.")
         return
 
-    logger.info("Checking %d product(s)...", len(products))
+    now = datetime.now(timezone.utc)
+    due = [dict(row) for row in products if _is_due(dict(row), now)]
 
-    for row in products:
-        product = dict(row)
+    if not due:
+        logger.info("No products due for checking (%d total tracked).", len(products))
+        return
+
+    logger.info("Checking %d product(s) (of %d total)...", len(due), len(products))
+
+    for i, product in enumerate(due):
         url = product["url"]
         logger.info("Checking: %s", product.get("name") or url[:60])
 
@@ -175,10 +200,8 @@ def check_all_prices():
 
         logger.info("  -> Price: %.2f (target: %.2f)", new_price, product["target_price"])
 
-        # Humanized delay between products (1-4 seconds)
-        if product != dict(products[-1]):
-            delay = random.uniform(1.0, 4.0)
-            time.sleep(delay)
+        if i < len(due) - 1:
+            time.sleep(random.uniform(1.0, 4.0))
 
     logger.info("Price check complete.")
 

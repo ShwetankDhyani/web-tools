@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ error_code }} – WebTools.wiki{% endblock %}
+
+{% block content %}
+<section class="error-page">
+  <div class="error-code">{{ error_code }}</div>
+  <h1>{% if error_code == 404 %}Page not found{% elif error_code == 403 %}Access denied{% else %}Something went wrong{% endif %}</h1>
+  <p class="error-msg">{{ error_msg }}</p>
+  <div class="error-actions">
+    <a href="/" class="btn-primary">Back to Home</a>
+    <a href="/price-tracker" class="btn-secondary">Price Tracker</a>
+  </div>
+</section>
+{% endblock %}

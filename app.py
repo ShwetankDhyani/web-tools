@@ -92,6 +92,7 @@ def _init_db():
         ("tracked_products", "username", "TEXT NOT NULL DEFAULT ''"),
         ("tracked_products", "error_count", "INTEGER DEFAULT 0"),
         ("tracked_products", "last_error", "TEXT DEFAULT ''"),
+        ("tracked_products", "check_interval", "INTEGER NOT NULL DEFAULT 3"),
     ]
     for table, column, col_type in migrations:
         try:
@@ -116,6 +117,14 @@ ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "").lower().strip()
 def _get_current_user() -> str | None:
     """Return the logged-in Telegram username from session, or None."""
     return session.get("telegram_user")
+
+
+def _clamp_check_interval(minutes) -> int:
+    try:
+        val = int(minutes)
+    except (TypeError, ValueError):
+        val = 3
+    return max(2, min(60, val))
 
 
 def _is_admin() -> bool:
@@ -200,8 +209,34 @@ def price_tracker_page():
 @login_required
 def price_tracker_admin_page():
     if not _is_admin():
-        return redirect(url_for("price_tracker_page"))
+        return render_template(
+            "404.html",
+            error_code=403,
+            error_msg="Admin access required.",
+        ), 403
     return render_template("price_tracker_admin.html")
+
+
+@app.errorhandler(404)
+def not_found(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Not found"}), 404
+    return render_template(
+        "404.html",
+        error_code=404,
+        error_msg="We couldn't find that page. It may have moved or the link might be wrong.",
+    ), 404
+
+
+@app.errorhandler(500)
+def server_error(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Internal server error"}), 500
+    return render_template(
+        "404.html",
+        error_code=500,
+        error_msg="Something went wrong on our end. Please try again in a moment.",
+    ), 500
 
 
 @app.route("/price-tracker/login")
@@ -941,6 +976,7 @@ def price_track():
         return jsonify({"error": "A valid target price is required"}), 400
 
     target_price = float(target_price)
+    check_interval = _clamp_check_interval(data.get("check_interval", 3))
 
     # Scrape current price
     name, current_price = _scrape_price(url)
@@ -955,9 +991,13 @@ def price_track():
     conn = _get_db()
     conn.execute(
         """INSERT INTO tracked_products
-           (id, url, name, current_price, target_price, currency, username, last_checked, created_at, price_history)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (product_id, url, name, current_price, target_price, currency, user, now, now, json.dumps(history)),
+           (id, url, name, current_price, target_price, currency, username,
+            last_checked, created_at, price_history, check_interval)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            product_id, url, name, current_price, target_price, currency, user,
+            now, now, json.dumps(history), check_interval,
+        ),
     )
     conn.commit()
     conn.close()
@@ -981,9 +1021,42 @@ def price_track():
         "current_price": current_price,
         "target_price": target_price,
         "currency": currency,
+        "check_interval": check_interval,
         "message": "Product is now being tracked!",
         "already_below": current_price is not None and current_price <= target_price,
     })
+
+
+@app.route("/api/price/update/<product_id>", methods=["PATCH"])
+@api_login_required
+def price_update(product_id: str):
+    """Update check interval for a tracked product."""
+    user = _get_current_user()
+    conn = _get_db()
+    product = conn.execute(
+        "SELECT * FROM tracked_products WHERE id = ?", (product_id,)
+    ).fetchone()
+    if not product:
+        conn.close()
+        return jsonify({"error": "Product not found"}), 404
+    product = dict(product)
+    if not _is_admin() and product["username"] != user:
+        conn.close()
+        return jsonify({"error": "Not allowed"}), 403
+
+    data = request.get_json(force=True)
+    if "check_interval" not in data:
+        conn.close()
+        return jsonify({"error": "Nothing to update"}), 400
+
+    interval = _clamp_check_interval(data["check_interval"])
+    conn.execute(
+        "UPDATE tracked_products SET check_interval = ? WHERE id = ?",
+        (interval, product_id),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "check_interval": interval})
 
 
 @app.route("/api/price/products")
