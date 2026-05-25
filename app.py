@@ -13,6 +13,7 @@ from email.mime.text import MIMEText
 from urllib.parse import urlparse
 
 import requests
+import urllib.parse
 from bs4 import BeautifulSoup
 from flask import (
     Flask,
@@ -68,6 +69,13 @@ def _init_db():
             smtp_port INTEGER NOT NULL DEFAULT 587,
             smtp_user TEXT NOT NULL DEFAULT '',
             smtp_pass TEXT NOT NULL DEFAULT ''
+        );
+
+        CREATE TABLE IF NOT EXISTS whatsapp_config (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            phone TEXT NOT NULL DEFAULT '',
+            api_key TEXT NOT NULL DEFAULT '',
+            enabled INTEGER NOT NULL DEFAULT 0
         );
     """)
     conn.commit()
@@ -690,6 +698,37 @@ def _send_price_alert(product: dict, new_price: float):
         return False
 
 
+def _send_whatsapp_alert(product: dict, new_price: float):
+    """Send a WhatsApp alert via CallMeBot."""
+    conn = _get_db()
+    config = conn.execute("SELECT * FROM whatsapp_config WHERE id = 1").fetchone()
+    conn.close()
+
+    if not config or not config["phone"] or not config["api_key"] or not config["enabled"]:
+        return False
+
+    text = (
+        f"📉 *Price Drop Alert!*\n\n"
+        f"*{product['name'] or 'Product'}*\n"
+        f"Current price: *${new_price:.2f}*\n"
+        f"Your target: ${product['target_price']:.2f}\n\n"
+        f"{product['url']}\n\n"
+        f"— WebTools.wiki Price Tracker"
+    )
+
+    try:
+        api_url = (
+            f"https://api.callmebot.com/whatsapp.php"
+            f"?phone={urllib.parse.quote(config['phone'])}"
+            f"&text={urllib.parse.quote(text)}"
+            f"&apikey={urllib.parse.quote(config['api_key'])}"
+        )
+        resp = requests.get(api_url, timeout=15)
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
 # Price checking is handled by check_prices.py via cron — no background loop needed.
 
 
@@ -736,8 +775,9 @@ def price_track():
             "current_price": current_price, "target_price": target_price,
             "email": email,
         }
-        sent = _send_price_alert(product, current_price)
-        if sent:
+        email_sent = _send_price_alert(product, current_price)
+        _send_whatsapp_alert(product, current_price)
+        if email_sent:
             conn = _get_db()
             conn.execute("UPDATE tracked_products SET notified = 1 WHERE id = ?", (product_id,))
             conn.commit()
@@ -811,8 +851,9 @@ def price_check_now(product_id: str):
 
     notified = False
     if new_price <= product["target_price"] and not product["notified"]:
-        sent = _send_price_alert(product, new_price)
-        if sent:
+        email_sent = _send_price_alert(product, new_price)
+        _send_whatsapp_alert(product, new_price)
+        if email_sent:
             conn.execute("UPDATE tracked_products SET notified = 1 WHERE id = ?", (product_id,))
             notified = True
 
@@ -859,6 +900,38 @@ def price_email_config():
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "message": "Email configuration saved."})
+
+
+@app.route("/api/price/whatsapp-config", methods=["GET", "POST"])
+def price_whatsapp_config():
+    """Get or set WhatsApp (CallMeBot) configuration."""
+    conn = _get_db()
+
+    if request.method == "GET":
+        config = conn.execute("SELECT * FROM whatsapp_config WHERE id = 1").fetchone()
+        conn.close()
+        if not config:
+            return jsonify({"phone": "", "enabled": False, "configured": False})
+        return jsonify({
+            "phone": config["phone"],
+            "enabled": bool(config["enabled"]),
+            "configured": bool(config["phone"] and config["api_key"]),
+        })
+
+    data = request.get_json(force=True)
+    conn.execute("DELETE FROM whatsapp_config")
+    conn.execute(
+        """INSERT INTO whatsapp_config (id, phone, api_key, enabled)
+           VALUES (1, ?, ?, ?)""",
+        (
+            data.get("phone", ""),
+            data.get("api_key", ""),
+            1 if data.get("enabled", True) else 0,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "WhatsApp configuration saved."})
 
 
 # ---------------------------------------------------------------------------

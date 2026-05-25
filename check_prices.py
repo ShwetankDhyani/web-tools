@@ -21,9 +21,12 @@ import smtplib
 import sqlite3
 import sys
 import time
+import urllib.parse
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+import requests
 
 from scraper import scrape_price
 
@@ -108,6 +111,47 @@ def _send_price_alert(product: dict, new_price: float) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# WhatsApp alerts (CallMeBot)
+# ---------------------------------------------------------------------------
+
+def _send_whatsapp_alert(product: dict, new_price: float) -> bool:
+    """Send a WhatsApp alert via CallMeBot."""
+    conn = _get_db()
+    config = conn.execute("SELECT * FROM whatsapp_config WHERE id = 1").fetchone()
+    conn.close()
+
+    if not config or not config["phone"] or not config["api_key"] or not config["enabled"]:
+        return False
+
+    text = (
+        f"\U0001f4c9 *Price Drop Alert!*\n\n"
+        f"*{product['name'] or 'Product'}*\n"
+        f"Current price: *${new_price:.2f}*\n"
+        f"Your target: ${product['target_price']:.2f}\n\n"
+        f"{product['url']}\n\n"
+        f"\u2014 WebTools.wiki Price Tracker"
+    )
+
+    try:
+        api_url = (
+            f"https://api.callmebot.com/whatsapp.php"
+            f"?phone={urllib.parse.quote(config['phone'])}"
+            f"&text={urllib.parse.quote(text)}"
+            f"&apikey={urllib.parse.quote(config['api_key'])}"
+        )
+        resp = requests.get(api_url, timeout=15)
+        if resp.status_code == 200:
+            logger.info("WhatsApp alert sent to %s for '%s'", config["phone"], product.get("name"))
+            return True
+        else:
+            logger.warning("WhatsApp API returned status %d", resp.status_code)
+            return False
+    except Exception as e:
+        logger.error("Failed to send WhatsApp alert: %s", e)
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Main check
 # ---------------------------------------------------------------------------
 
@@ -151,8 +195,9 @@ def check_all_prices():
 
         if new_price <= product["target_price"]:
             logger.info("Price %.2f is at or below target %.2f!", new_price, product["target_price"])
-            sent = _send_price_alert(product, new_price)
-            if sent:
+            email_sent = _send_price_alert(product, new_price)
+            _send_whatsapp_alert(product, new_price)
+            if email_sent:
                 conn.execute(
                     "UPDATE tracked_products SET notified = 1 WHERE id = ?",
                     (product["id"],),

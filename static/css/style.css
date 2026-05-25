@@ -438,6 +438,26 @@ img { max-width: 100%; height: auto; }
 }
 .config-field input:focus { border-color: var(--primary); }
 .config-actions { display: flex; gap: 0.75rem; }
+.config-setup-steps {
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.25rem;
+  background: rgba(108, 92, 231, 0.06);
+  border: 1px solid rgba(108, 92, 231, 0.15);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+.config-setup-steps ol {
+  margin: 0.5rem 0 0 1.25rem;
+  padding: 0;
+}
+.config-setup-steps li { margin-bottom: 0.25rem; }
+.config-setup-steps code {
+  background: var(--surface-2);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
 
 .btn-secondary {
   display: inline-flex;

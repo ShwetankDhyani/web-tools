@@ -40,6 +40,40 @@
     </div>
   </div>
 
+  <!-- WhatsApp config banner -->
+  <div id="whatsappBanner" class="email-banner hidden">
+    <p>Get price drop alerts on WhatsApp too!</p>
+    <button class="btn-secondary" onclick="toggleWhatsAppConfig()">Configure WhatsApp</button>
+  </div>
+
+  <!-- WhatsApp config form (hidden) -->
+  <div id="whatsappConfig" class="email-config hidden">
+    <h3>WhatsApp Notifications</h3>
+    <p class="tool-desc">Get alerts via WhatsApp using <a href="https://www.callmebot.com/blog/free-api-whatsapp-messages/" target="_blank" rel="noopener">CallMeBot</a> (free).</p>
+    <div class="config-setup-steps">
+      <p><strong>One-time setup:</strong></p>
+      <ol>
+        <li>Save this number in your contacts: <strong>+34 644 44 98 81</strong></li>
+        <li>Send <code>I allow callmebot to send me messages</code> to that number on WhatsApp</li>
+        <li>You'll receive an API key — enter it below along with your phone number</li>
+      </ol>
+    </div>
+    <div class="config-grid">
+      <div class="config-field">
+        <label for="waPhone">Phone Number (with country code)</label>
+        <input type="tel" id="waPhone" placeholder="+919876543210" />
+      </div>
+      <div class="config-field">
+        <label for="waApiKey">CallMeBot API Key</label>
+        <input type="text" id="waApiKey" placeholder="123456" />
+      </div>
+    </div>
+    <div class="config-actions">
+      <button class="btn-primary" id="saveWhatsAppBtn" onclick="saveWhatsAppConfig()">Save</button>
+      <button class="btn-secondary" onclick="toggleWhatsAppConfig()">Cancel</button>
+    </div>
+  </div>
+
   <!-- Add product form -->
   <div class="track-form">
     <h3>Track a Product</h3>

@@ -1,5 +1,6 @@
 document.addEventListener("DOMContentLoaded", () => {
   checkEmailConfig();
+  checkWhatsAppConfig();
   loadProducts();
 });
 
@@ -44,6 +45,54 @@ function saveEmailConfig() {
         btn.disabled = false;
         toggleEmailConfig();
         checkEmailConfig();
+      }, 1500);
+    })
+    .catch(() => {
+      btn.textContent = "Save";
+      btn.disabled = false;
+    });
+}
+
+function checkWhatsAppConfig() {
+  fetch("/api/price/whatsapp-config")
+    .then((r) => r.json())
+    .then((data) => {
+      const banner = document.getElementById("whatsappBanner");
+      if (!data.configured) {
+        banner.classList.remove("hidden");
+      } else {
+        banner.classList.add("hidden");
+      }
+    });
+}
+
+function toggleWhatsAppConfig() {
+  const el = document.getElementById("whatsappConfig");
+  el.classList.toggle("hidden");
+}
+
+function saveWhatsAppConfig() {
+  const btn = document.getElementById("saveWhatsAppBtn");
+  btn.disabled = true;
+  btn.textContent = "Saving...";
+
+  fetch("/api/price/whatsapp-config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      phone: document.getElementById("waPhone").value,
+      api_key: document.getElementById("waApiKey").value,
+      enabled: true,
+    }),
+  })
+    .then((r) => r.json())
+    .then(() => {
+      btn.textContent = "Saved!";
+      setTimeout(() => {
+        btn.textContent = "Save";
+        btn.disabled = false;
+        toggleWhatsAppConfig();
+        checkWhatsAppConfig();
       }, 1500);
     })
     .catch(() => {
