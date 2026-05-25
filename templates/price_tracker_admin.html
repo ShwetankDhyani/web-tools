@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block title %}Price Tracker Admin – WebTools.wiki{% endblock %}
+
+{% block content %}
+<section class="tool-page">
+  <div class="admin-header">
+    <h1>Price Tracker Admin</h1>
+    <a href="/price-tracker" class="btn-secondary btn-sm">&larr; Back to Tracker</a>
+  </div>
+
+  <!-- Status cards -->
+  <div class="admin-stats" id="statsContainer">
+    <div class="stat-card">
+      <span class="stat-value" id="statTotal">—</span>
+      <span class="stat-label">Total Products</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value" id="statActive">—</span>
+      <span class="stat-label">Actively Tracking</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value" id="statNotified">—</span>
+      <span class="stat-label">Alerted (done)</span>
+    </div>
+    <div class="stat-card stat-card-warn" id="statErrorCard">
+      <span class="stat-value" id="statErroring">—</span>
+      <span class="stat-label">Failing (3+ errors)</span>
+    </div>
+  </div>
+
+  <!-- Last check and Telegram status -->
+  <div class="admin-info-bar">
+    <span id="lastCheckedInfo">Last checked: —</span>
+    <span id="telegramInfo">Telegram: —</span>
+  </div>
+
+  <!-- Bulk actions -->
+  <div class="admin-actions">
+    <h3>Bulk Actions</h3>
+    <div class="action-buttons">
+      <button class="btn-secondary btn-sm" onclick="cleanupNotified()">Remove Notified (7+ days old)</button>
+      <button class="btn-secondary btn-sm btn-warn" onclick="deleteErroring()">Remove All Failing Products</button>
+      <button class="btn-secondary btn-sm" onclick="deleteAllNotified()">Remove All Notified</button>
+    </div>
+    <span id="actionResult" class="action-result"></span>
+  </div>
+
+  <!-- Products table -->
+  <div class="admin-products">
+    <h3>All Tracked Products</h3>
+    <div id="adminProductsContainer"></div>
+    <p id="adminEmpty" class="admin-empty hidden">No products being tracked.</p>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  loadStatus();
+  loadAdminProducts();
+});
+
+function loadStatus() {
+  fetch("/api/price/status")
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById("statTotal").textContent = data.total_products;
+      document.getElementById("statActive").textContent = data.active;
+      document.getElementById("statNotified").textContent = data.notified;
+      document.getElementById("statErroring").textContent = data.erroring;
+      if (data.erroring > 0) {
+        document.getElementById("statErrorCard").classList.add("has-errors");
+      }
+      document.getElementById("lastCheckedInfo").textContent =
+        "Last checked: " + (data.last_checked ? timeAgo(new Date(data.last_checked)) : "never");
+      document.getElementById("telegramInfo").textContent =
+        "Telegram: " + (data.telegram_configured ? "configured" : "not set");
+    });
+}
+
+function loadAdminProducts() {
+  fetch("/api/price/admin/products")
+    .then(r => r.json())
+    .then(products => {
+      const container = document.getElementById("adminProductsContainer");
+      const empty = document.getElementById("adminEmpty");
+
+      if (products.length === 0) {
+        container.innerHTML = "";
+        empty.classList.remove("hidden");
+        return;
+      }
+
+      empty.classList.add("hidden");
+      container.innerHTML = `
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Price</th>
+              <th>Target</th>
+              <th>Status</th>
+              <th>Errors</th>
+              <th>Last Checked</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${products.map(renderAdminRow).join("")}
+          </tbody>
+        </table>
+      `;
+    });
+}
+
+function renderAdminRow(p) {
+  let status;
+  if (p.notified) {
+    status = '<span class="badge badge-success">Alerted</span>';
+  } else if (p.error_count >= 3) {
+    status = '<span class="badge badge-error">Failing</span>';
+  } else if (p.current_price !== null && p.current_price <= p.target_price) {
+    status = '<span class="badge badge-success">Below target</span>';
+  } else {
+    status = '<span class="badge badge-tracking">Tracking</span>';
+  }
+
+  const errorCell = p.error_count > 0
+    ? `<span class="error-count" title="${p.last_error || ''}">${p.error_count} fail${p.error_count !== 1 ? 's' : ''}</span>`
+    : '<span class="no-errors">0</span>';
+
+  const priceDisplay = p.current_price !== null ? `$${p.current_price.toFixed(2)}` : "—";
+  const lastChecked = p.last_checked ? timeAgo(new Date(p.last_checked)) : "Never";
+  const name = p.name || "Unknown";
+  const shortUrl = truncateUrl(p.url);
+
+  return `
+    <tr class="${p.error_count >= 3 ? 'row-error' : ''}">
+      <td>
+        <div class="admin-product-name">${name}</div>
+        <a href="${p.url}" target="_blank" rel="noopener" class="admin-product-url">${shortUrl}</a>
+      </td>
+      <td>${priceDisplay}</td>
+      <td>$${p.target_price.toFixed(2)}</td>
+      <td>${status}</td>
+      <td>${errorCell}</td>
+      <td>${lastChecked}</td>
+      <td class="action-cell">
+        ${p.error_count > 0 ? `<button class="btn-tiny" onclick="resetErrors('${p.id}')">Retry</button>` : ''}
+        <button class="btn-tiny btn-danger" onclick="deleteProduct('${p.id}')">Delete</button>
+      </td>
+    </tr>
+  `;
+}
+
+function cleanupNotified() {
+  if (!confirm("Remove all notified products older than 7 days?")) return;
+  fetch("/api/price/admin/cleanup", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({days: 7})
+  })
+    .then(r => r.json())
+    .then(data => {
+      showActionResult(`Removed ${data.deleted} product(s).`);
+      loadStatus();
+      loadAdminProducts();
+    });
+}
+
+function deleteErroring() {
+  if (!confirm("Remove all products with 3+ consecutive failures?")) return;
+  fetch("/api/price/admin/delete-erroring", {method: "POST"})
+    .then(r => r.json())
+    .then(data => {
+      showActionResult(`Removed ${data.deleted} failing product(s).`);
+      loadStatus();
+      loadAdminProducts();
+    });
+}
+
+function deleteAllNotified() {
+  if (!confirm("Remove ALL notified products?")) return;
+  fetch("/api/price/admin/delete-all-notified", {method: "POST"})
+    .then(r => r.json())
+    .then(data => {
+      showActionResult(`Removed ${data.deleted} notified product(s).`);
+      loadStatus();
+      loadAdminProducts();
+    });
+}
+
+function resetErrors(productId) {
+  fetch(`/api/price/admin/reset-errors/${productId}`, {method: "POST"})
+    .then(r => r.json())
+    .then(() => {
+      showActionResult("Error count reset — will retry on next check.");
+      loadAdminProducts();
+    });
+}
+
+function deleteProduct(productId) {
+  if (!confirm("Delete this product?")) return;
+  fetch(`/api/price/delete/${productId}`, {method: "DELETE"})
+    .then(() => {
+      loadStatus();
+      loadAdminProducts();
+    });
+}
+
+function showActionResult(msg) {
+  const el = document.getElementById("actionResult");
+  el.textContent = msg;
+  setTimeout(() => { el.textContent = ""; }, 5000);
+}
+
+function timeAgo(date) {
+  const seconds = Math.floor((new Date() - date) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function truncateUrl(url) {
+  try {
+    const u = new URL(url);
+    let path = u.pathname;
+    if (path.length > 30) path = path.substring(0, 30) + "...";
+    return u.hostname + path;
+  } catch {
+    return url.length > 50 ? url.substring(0, 50) + "..." : url;
+  }
+}
+</script>
+{% endblock %}

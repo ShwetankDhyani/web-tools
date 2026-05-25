@@ -59,7 +59,9 @@ def _init_db():
             last_checked TEXT,
             notified INTEGER DEFAULT 0,
             created_at TEXT NOT NULL,
-            price_history TEXT DEFAULT '[]'
+            price_history TEXT DEFAULT '[]',
+            error_count INTEGER DEFAULT 0,
+            last_error TEXT DEFAULT ''
         );
 
         CREATE TABLE IF NOT EXISTS telegram_config (
@@ -96,6 +98,11 @@ def paywall_remover_page():
 @app.route("/price-tracker")
 def price_tracker_page():
     return render_template("price_tracker.html")
+
+
+@app.route("/price-tracker/admin")
+def price_tracker_admin_page():
+    return render_template("price_tracker_admin.html")
 
 
 # ---------------------------------------------------------------------------
@@ -862,6 +869,104 @@ def test_notification():
     }
     result = _send_telegram_alert(test_product, 42.99)
     return jsonify({"ok": result})
+
+
+# ---------------------------------------------------------------------------
+# API – Price Tracker Admin
+# ---------------------------------------------------------------------------
+
+@app.route("/api/price/status")
+def price_tracker_status():
+    """Overview of tracker health."""
+    conn = _get_db()
+    total = conn.execute("SELECT COUNT(*) FROM tracked_products").fetchone()[0]
+    notified = conn.execute("SELECT COUNT(*) FROM tracked_products WHERE notified = 1").fetchone()[0]
+    active = total - notified
+    erroring = conn.execute("SELECT COUNT(*) FROM tracked_products WHERE error_count >= 3").fetchone()[0]
+    last_checked_row = conn.execute(
+        "SELECT last_checked FROM tracked_products ORDER BY last_checked DESC LIMIT 1"
+    ).fetchone()
+    telegram = conn.execute("SELECT * FROM telegram_config WHERE id = 1").fetchone()
+    conn.close()
+
+    return jsonify({
+        "total_products": total,
+        "active": active,
+        "notified": notified,
+        "erroring": erroring,
+        "last_checked": last_checked_row["last_checked"] if last_checked_row else None,
+        "telegram_configured": bool(telegram and telegram["username"]),
+    })
+
+
+@app.route("/api/price/admin/products")
+def admin_products():
+    """List all products with error info for admin view."""
+    conn = _get_db()
+    rows = conn.execute(
+        "SELECT * FROM tracked_products ORDER BY error_count DESC, created_at DESC"
+    ).fetchall()
+    conn.close()
+    products = []
+    for row in rows:
+        r = dict(row)
+        r["price_history"] = json.loads(r["price_history"] or "[]")
+        products.append(r)
+    return jsonify(products)
+
+
+@app.route("/api/price/admin/cleanup", methods=["POST"])
+def admin_cleanup():
+    """Remove notified products older than N days."""
+    data = request.get_json(force=True)
+    days = int(data.get("days", 7))
+    conn = _get_db()
+    cutoff = datetime.now(timezone.utc).isoformat()
+    result = conn.execute(
+        """DELETE FROM tracked_products
+           WHERE notified = 1
+           AND created_at < datetime(?, '-' || ? || ' days')""",
+        (cutoff, days),
+    )
+    deleted = result.rowcount
+    conn.commit()
+    conn.close()
+    return jsonify({"deleted": deleted})
+
+
+@app.route("/api/price/admin/delete-erroring", methods=["POST"])
+def admin_delete_erroring():
+    """Remove products with 3+ consecutive scraping failures."""
+    conn = _get_db()
+    result = conn.execute("DELETE FROM tracked_products WHERE error_count >= 3")
+    deleted = result.rowcount
+    conn.commit()
+    conn.close()
+    return jsonify({"deleted": deleted})
+
+
+@app.route("/api/price/admin/delete-all-notified", methods=["POST"])
+def admin_delete_all_notified():
+    """Remove all notified products."""
+    conn = _get_db()
+    result = conn.execute("DELETE FROM tracked_products WHERE notified = 1")
+    deleted = result.rowcount
+    conn.commit()
+    conn.close()
+    return jsonify({"deleted": deleted})
+
+
+@app.route("/api/price/admin/reset-errors/<product_id>", methods=["POST"])
+def admin_reset_errors(product_id: str):
+    """Reset error count for a product (retry scraping)."""
+    conn = _get_db()
+    conn.execute(
+        "UPDATE tracked_products SET error_count = 0, last_error = '' WHERE id = ?",
+        (product_id,),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
 
 
 # ---------------------------------------------------------------------------

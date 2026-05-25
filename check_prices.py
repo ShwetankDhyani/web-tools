@@ -130,21 +130,36 @@ def check_all_prices():
         url = product["url"]
         logger.info("Checking: %s", product.get("name") or url[:60])
 
-        _, new_price = scrape_price(url)
-
-        if new_price is None:
-            logger.warning("Could not get price for %s", url[:80])
-            continue
+        try:
+            _, new_price = scrape_price(url)
+        except Exception as e:
+            new_price = None
+            logger.error("Scrape exception for %s: %s", url[:80], e)
 
         now = datetime.now(timezone.utc).isoformat()
+        conn = _get_db()
+
+        if new_price is None:
+            error_count = product.get("error_count", 0) + 1
+            logger.warning("Could not get price for %s (fail #%d)", url[:80], error_count)
+            conn.execute(
+                """UPDATE tracked_products
+                   SET error_count = ?, last_error = ?, last_checked = ?
+                   WHERE id = ?""",
+                (error_count, f"Failed to scrape price at {now}", now, product["id"]),
+            )
+            conn.commit()
+            conn.close()
+            continue
+
         history = json.loads(product["price_history"] or "[]")
         history.append({"price": new_price, "date": now})
         history = history[-100:]
 
-        conn = _get_db()
         conn.execute(
             """UPDATE tracked_products
-               SET current_price = ?, last_checked = ?, price_history = ?
+               SET current_price = ?, last_checked = ?, price_history = ?,
+                   error_count = 0, last_error = ''
                WHERE id = ?""",
             (new_price, now, json.dumps(history), product["id"]),
         )
