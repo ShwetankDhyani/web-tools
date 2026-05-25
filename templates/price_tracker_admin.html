@@ -11,7 +11,7 @@
       <h1>Price Tracker Admin</h1>
       <p class="tool-desc">System overview, check history, and bulk maintenance.</p>
     </div>
-    <a href="/price-tracker" class="btn-secondary btn-sm">&larr; Back to tracker</a>
+    <a href="/price-tracker" class="btn-secondary btn-sm btn-back-tracker">&larr; Back to tracker</a>
   </div>
 
   <!-- Status cards -->
@@ -59,7 +59,7 @@
   <!-- Recent check activity -->
   <div class="admin-products">
     <h3>Recent check activity</h3>
-    <div id="checkHistoryContainer">
+    <div id="checkHistoryContainer" class="admin-table-responsive">
       <p class="admin-empty">Loading...</p>
     </div>
   </div>
@@ -67,10 +67,10 @@
   <!-- Bulk actions -->
   <div class="admin-actions">
     <h3>Bulk Actions</h3>
-    <div class="action-buttons">
-      <button class="btn-secondary btn-sm" onclick="cleanupNotified()">Remove Notified (7+ days old)</button>
-      <button class="btn-secondary btn-sm btn-warn" onclick="deleteErroring()">Remove All Failing Products</button>
-      <button class="btn-secondary btn-sm" onclick="deleteAllNotified()">Remove All Notified</button>
+    <div class="action-buttons action-buttons-stack">
+      <button type="button" class="btn-secondary btn-sm" onclick="cleanupNotified()">Remove Notified (7+ days old)</button>
+      <button type="button" class="btn-secondary btn-sm btn-warn" onclick="deleteErroring()">Remove All Failing Products</button>
+      <button type="button" class="btn-secondary btn-sm" onclick="deleteAllNotified()">Remove All Notified</button>
     </div>
     <span id="actionResult" class="action-result"></span>
   </div>
@@ -78,13 +78,13 @@
   <!-- Users table -->
   <div class="admin-products">
     <h3>Registered Users</h3>
-    <div id="adminUsersContainer"></div>
+    <div id="adminUsersContainer" class="admin-table-responsive"></div>
   </div>
 
   <!-- Products table -->
   <div class="admin-products">
     <h3>All Tracked Products</h3>
-    <div id="adminProductsContainer"></div>
+    <div id="adminProductsContainer" class="admin-table-responsive"></div>
     <p id="adminEmpty" class="admin-empty hidden">No products being tracked.</p>
   </div>
 </section>
@@ -163,12 +163,12 @@ function loadCheckHistory() {
                 ? `${cur}${Number(r.price).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
                 : (r.error || "—");
               return `<tr class="${ok ? "" : "row-error"}">
-                <td>${timeAgo(new Date(r.checked_at))}</td>
-                <td><div class="admin-product-name">${escapeHtml(r.name || "Unknown")}</div></td>
-                <td>@${escapeHtml(r.username || "—")}</td>
-                <td><span class="badge badge-source">${escapeHtml(r.source || "cron")}</span></td>
-                <td>${ok ? '<span class="badge badge-success">OK</span>' : '<span class="badge badge-error">Failed</span>'}</td>
-                <td class="check-detail">${escapeHtml(detail)}</td>
+                <td data-label="When">${timeAgo(new Date(r.checked_at))}</td>
+                <td data-label="Product"><div class="admin-product-name">${escapeHtml(r.name || "Unknown")}</div></td>
+                <td data-label="User">@${escapeHtml(r.username || "—")}</td>
+                <td data-label="Source"><span class="badge badge-source">${escapeHtml(r.source || "cron")}</span></td>
+                <td data-label="Result">${ok ? '<span class="badge badge-success">OK</span>' : '<span class="badge badge-error">Failed</span>'}</td>
+                <td data-label="Detail" class="check-detail">${escapeHtml(detail)}</td>
               </tr>`;
             }).join("")}
           </tbody>
@@ -193,11 +193,11 @@ function loadUsers() {
           <thead><tr><th>Username</th><th>Role</th><th>Products</th><th>Active</th><th>Joined</th></tr></thead>
           <tbody>${users.map(u => `
             <tr>
-              <td><strong>@${u.username}</strong></td>
-              <td>${u.is_admin ? '<span class="badge badge-admin">Admin</span>' : '<span class="badge badge-tracking">User</span>'}</td>
-              <td>${u.product_count}</td>
-              <td>${u.active_count || 0}</td>
-              <td>${timeAgo(new Date(u.created_at))}</td>
+              <td data-label="Username"><strong>@${u.username}</strong></td>
+              <td data-label="Role">${u.is_admin ? '<span class="badge badge-admin">Admin</span>' : '<span class="badge badge-tracking">User</span>'}</td>
+              <td data-label="Products">${u.product_count}</td>
+              <td data-label="Active">${u.active_count || 0}</td>
+              <td data-label="Joined">${timeAgo(new Date(u.created_at))}</td>
             </tr>`).join("")}
           </tbody>
         </table>`;
@@ -275,20 +275,20 @@ function renderAdminRow(p) {
 
   return `
     <tr class="${p.error_count >= 3 ? 'row-error' : ''}">
-      <td>
+      <td data-label="Product">
         <div class="admin-product-name">${name}</div>
         <a href="${p.url}" target="_blank" rel="noopener" class="admin-product-url">${shortUrl}</a>
       </td>
-      <td>@${p.username || '—'}</td>
-      <td>${priceDisplay}</td>
-      <td>${cur}${p.target_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-      <td>${status}</td>
-      <td>${checksCell}</td>
-      <td>${errorCell}</td>
-      <td>${lastChecked}</td>
-      <td class="action-cell">
-        ${p.error_count > 0 ? `<button class="btn-tiny" onclick="resetErrors('${p.id}')">Retry</button>` : ''}
-        <button class="btn-tiny btn-danger" onclick="deleteProduct('${p.id}')">Delete</button>
+      <td data-label="User">@${p.username || '—'}</td>
+      <td data-label="Price">${priceDisplay}</td>
+      <td data-label="Target">${cur}${p.target_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+      <td data-label="Status">${status}</td>
+      <td data-label="Checks">${checksCell}</td>
+      <td data-label="Errors">${errorCell}</td>
+      <td data-label="Last checked">${lastChecked}</td>
+      <td class="action-cell" data-label="Actions">
+        ${p.error_count > 0 ? `<button class="btn-tiny" type="button" onclick="resetErrors('${p.id}')">Retry</button>` : ''}
+        <button class="btn-tiny btn-danger" type="button" onclick="deleteProduct('${p.id}')">Delete</button>
       </td>
     </tr>
   `;

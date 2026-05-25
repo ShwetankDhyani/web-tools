@@ -36,15 +36,18 @@
     <div class="login-step-label">Enter code</div>
     <h3>Check Telegram for your 6-digit code</h3>
     <p class="login-sent-to">Sent to <strong>@<span id="otpSentTo"></span></strong></p>
-    <div class="otp-input-group">
-      <input type="text" class="otp-digit" maxlength="1" data-idx="0" inputmode="numeric" autocomplete="one-time-code" />
-      <input type="text" class="otp-digit" maxlength="1" data-idx="1" inputmode="numeric" />
-      <input type="text" class="otp-digit" maxlength="1" data-idx="2" inputmode="numeric" />
-      <span class="otp-sep">—</span>
-      <input type="text" class="otp-digit" maxlength="1" data-idx="3" inputmode="numeric" />
-      <input type="text" class="otp-digit" maxlength="1" data-idx="4" inputmode="numeric" />
-      <input type="text" class="otp-digit" maxlength="1" data-idx="5" inputmode="numeric" />
-    </div>
+    <label class="otp-label" for="otpCode">6-digit code</label>
+    <input
+      type="text"
+      id="otpCode"
+      class="otp-single"
+      inputmode="numeric"
+      autocomplete="one-time-code"
+      maxlength="6"
+      pattern="[0-9]*"
+      placeholder="000000"
+      aria-label="6-digit login code"
+    />
     <button class="btn-login" id="verifyBtn" onclick="verifyOTP()">Verify &amp; continue</button>
     <p class="login-back"><a href="#" onclick="backToStep1(); return false;">&larr; Different username</a></p>
   </div>
@@ -56,26 +59,17 @@
 const ACTIVATE_URL = {{ callmebot_activate_url|tojson }};
 let pendingUsername = "";
 
-document.querySelectorAll(".otp-digit").forEach((inp, i, all) => {
-  inp.addEventListener("input", () => {
-    inp.value = inp.value.replace(/\D/g, "").slice(0, 1);
-    if (inp.value && i < all.length - 1) all[i + 1].focus();
-    if (i === all.length - 1 && inp.value) verifyOTP();
-  });
-  inp.addEventListener("keydown", (e) => {
-    if (e.key === "Backspace" && !inp.value && i > 0) all[i - 1].focus();
-  });
-  inp.addEventListener("paste", (e) => {
-    e.preventDefault();
-    const text = (e.clipboardData.getData("text") || "").replace(/\D/g, "");
-    for (let j = 0; j < Math.min(text.length, all.length); j++) all[j].value = text[j];
-    if (text.length >= all.length) verifyOTP();
-    else all[Math.min(text.length, all.length - 1)].focus();
-  });
+const otpInput = document.getElementById("otpCode");
+otpInput.addEventListener("input", () => {
+  otpInput.value = otpInput.value.replace(/\D/g, "").slice(0, 6);
+  if (otpInput.value.length === 6) verifyOTP();
+});
+otpInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && otpInput.value.length >= 6) verifyOTP();
 });
 
 function getOtpCode() {
-  return Array.from(document.querySelectorAll(".otp-digit")).map((i) => i.value).join("");
+  return (document.getElementById("otpCode").value || "").replace(/\D/g, "");
 }
 
 function requestOTP() {
@@ -104,8 +98,8 @@ function requestOTP() {
       document.getElementById("otpSentTo").textContent = username;
       document.getElementById("stepUsername").classList.add("hidden");
       document.getElementById("stepOtp").classList.remove("hidden");
-      document.querySelectorAll(".otp-digit").forEach((i) => (i.value = ""));
-      document.querySelector(".otp-digit").focus();
+      otpInput.value = "";
+      otpInput.focus();
     })
     .catch(() => {
       btn.disabled = false;
@@ -148,7 +142,7 @@ function verifyOTP() {
 function backToStep1() {
   document.getElementById("stepOtp").classList.add("hidden");
   document.getElementById("stepUsername").classList.remove("hidden");
-  document.querySelectorAll(".otp-digit").forEach((i) => (i.value = ""));
+  otpInput.value = "";
   hideLoginError();
 }
 
