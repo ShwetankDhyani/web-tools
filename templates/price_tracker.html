@@ -3,71 +3,77 @@
 
 {% block content %}
 <section class="tool-page">
-  <h1>Price Tracker</h1>
-  <p class="tool-desc">Track product prices from any online store. Get notified on Telegram when the price drops below your target.</p>
+  {% set crumb = "Price Tracker" %}
+  {% include "partials/breadcrumb.html" %}
 
-  <!-- User bar -->
-  <div class="user-bar">
+  <header class="tool-header">
+    <div>
+      <h1>Price Tracker</h1>
+      <p class="tool-desc">Watch prices on any store. Alerts are sent to your Telegram when a product drops below your target.</p>
+    </div>
+    <span class="tool-pill tool-pill-telegram">Telegram only</span>
+  </header>
+
+  <div class="panel user-panel">
     <div class="user-info">
-      Logged in as <strong>@<span id="currentUser"></span></strong>
+      <span class="user-label">Signed in</span>
+      <strong>@<span id="currentUser"></span></strong>
       <span id="adminBadge" class="badge badge-admin hidden">Admin</span>
     </div>
     <div class="user-actions">
-      <button class="btn-secondary btn-sm" id="testNotifBtn" onclick="testNotification()">Test Alert</button>
-      <button class="btn-secondary btn-sm" onclick="logout()">Logout</button>
+      <button class="btn-secondary btn-sm" id="testNotifBtn" onclick="testNotification()" title="Send a test message via Telegram">Test Telegram</button>
+      <button class="btn-secondary btn-sm" onclick="logout()">Log out</button>
     </div>
   </div>
-  <span id="testNotifResult" style="font-size: 0.85rem; margin-top: -0.75rem; display: block; margin-bottom: 1rem;"></span>
+  <p id="testNotifResult" class="inline-hint hidden"></p>
 
-  <!-- Error -->
   <div id="errorSection" class="error-section hidden">
     <p id="errorText"></p>
   </div>
-
-  <!-- Status -->
   <div id="trackStatus" class="track-status hidden"></div>
 
-  <!-- Tracked Products List -->
-  <div id="productsList" class="products-list">
-    <div class="products-header">
-      <h3>Your Tracked Products</h3>
-      <span id="productCount" class="product-count"></span>
-    </div>
-
-    <div id="productsContainer"></div>
-
-    <div id="emptyState" class="empty-state-box hidden">
-      <div class="empty-icon">📦</div>
-      <h4>No products tracked yet</h4>
-      <p>Add a product URL below to start tracking its price. You'll get notified on Telegram when it drops below your target.</p>
-    </div>
-  </div>
-
-  <!-- Add product form -->
-  <div class="track-form" id="addProductForm">
-    <h3>Add New Product</h3>
+  <div class="track-form panel" id="addProductForm">
+    <h2 class="panel-title">Add a product</h2>
+    <p class="panel-hint">Paste a product link, set your target price, and choose how often we check.</p>
     <div class="form-row">
-      <input type="url" id="productUrl" placeholder="Paste product URL (Amazon, Flipkart, any store...)" />
+      <label class="sr-only" for="productUrl">Product URL</label>
+      <input type="url" id="productUrl" placeholder="https://www.amazon.in/dp/… or any store URL" />
     </div>
     <div class="form-row-half">
       <div class="form-field">
-        <label for="targetPrice">Alert me when price drops below</label>
-        <input type="number" id="targetPrice" placeholder="99.99" step="0.01" min="0" />
+        <label for="targetPrice">Notify when price drops below</label>
+        <input type="number" id="targetPrice" placeholder="9999" step="0.01" min="0" />
       </div>
       <div class="form-field">
-        <label for="checkInterval">Check every (minutes)</label>
+        <label for="checkInterval">Check every</label>
         <select id="checkInterval">
           {% for m in range(2, 61) %}
-          <option value="{{ m }}"{% if m == 3 %} selected{% endif %}>{{ m }} min</option>
+          <option value="{{ m }}"{% if m == 3 %} selected{% endif %}>{{ m }} minutes</option>
           {% endfor %}
         </select>
       </div>
     </div>
-    <button class="btn-primary" id="trackBtn" onclick="trackProduct()">Start Tracking</button>
+    <button class="btn-primary" id="trackBtn" onclick="trackProduct()">Start tracking</button>
+  </div>
+
+  <div id="productsList" class="products-list">
+    <div class="products-header">
+      <h2 class="panel-title">Your tracked products</h2>
+      <span id="productCount" class="product-count"></span>
+    </div>
+    <div id="productsContainer"></div>
+    <div id="emptyState" class="empty-state-box hidden">
+      <div class="empty-icon" aria-hidden="true">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+      </div>
+      <h3>Nothing tracked yet</h3>
+      <p>Add a product above. We will message you on Telegram when the price falls below your target.</p>
+    </div>
   </div>
 
   <div class="admin-link hidden" id="adminLink">
-    <a href="/price-tracker/admin">Admin Dashboard</a> — manage all products, view errors, bulk cleanup
+    <a href="/price-tracker/admin">Admin dashboard</a>
+    <span class="admin-link-desc">— all users, check history, bulk cleanup</span>
   </div>
 </section>
 {% endblock %}

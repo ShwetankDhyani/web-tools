@@ -2,7 +2,9 @@
 {% block title %}Login – Price Tracker – WebTools.wiki{% endblock %}
 
 {% block content %}
-<section class="login-page">
+<section class="tool-page login-page">
+  {% set crumb = "Sign in" %}
+  {% include "partials/breadcrumb.html" %}
   <div class="login-hero">
     <div class="login-icon">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -11,7 +13,7 @@
       </svg>
     </div>
     <h1>Price Tracker</h1>
-    <p class="login-subtitle">Log in with Telegram to track prices and get alerts when they drop.</p>
+    <p class="login-subtitle">Sign in with Telegram to track prices. Alerts are sent to your Telegram — never by email.</p>
   </div>
 
   <div id="loginError" class="login-error hidden"></div>
@@ -60,7 +62,7 @@
     <ol>
       <li>Open <strong>Telegram</strong> and search for <strong>@CallMeBot_txtbot</strong></li>
       <li>Send <code>/start</code> to the bot</li>
-      <li>Come back here and log in with your Telegram username</li>
+      <li>Return here and sign in with the same Telegram username</li>
     </ol>
   </div>
 </section>

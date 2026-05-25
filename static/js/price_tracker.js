@@ -29,28 +29,31 @@ function testNotification() {
   const btn = document.getElementById("testNotifBtn");
   const result = document.getElementById("testNotifResult");
   btn.disabled = true;
-  btn.textContent = "Sending...";
+  btn.textContent = "Sending…";
   result.textContent = "";
+  result.classList.add("hidden");
 
   fetch("/api/price/test-notification", { method: "POST" })
     .then((r) => r.json())
     .then((data) => {
       btn.disabled = false;
-      btn.textContent = "Test Alert";
+      btn.textContent = "Test Telegram";
+      result.classList.remove("hidden");
       if (data.ok) {
-        result.textContent = "Test message sent to your Telegram!";
-        result.style.color = "var(--accent)";
+        result.textContent = "Test message sent to your Telegram.";
+        result.classList.remove("inline-hint-error");
       } else {
         result.textContent =
-          "Failed — make sure you messaged @CallMeBot_txtbot with /start first";
-        result.style.color = "#e74c3c";
+          "Could not send — open Telegram, message @CallMeBot_txtbot, and send /start first.";
+        result.classList.add("inline-hint-error");
       }
     })
     .catch(() => {
       btn.disabled = false;
-      btn.textContent = "Test Alert";
-      result.textContent = "Request failed";
-      result.style.color = "#e74c3c";
+      btn.textContent = "Test Telegram";
+      result.classList.remove("hidden");
+      result.classList.add("inline-hint-error");
+      result.textContent = "Request failed. Try again.";
     });
 }
 
@@ -66,7 +69,7 @@ function trackProduct() {
 
   const btn = document.getElementById("trackBtn");
   btn.disabled = true;
-  btn.textContent = "Fetching price...";
+  btn.textContent = "Fetching price…";
   hideError();
 
   const status = document.getElementById("trackStatus");
@@ -84,7 +87,7 @@ function trackProduct() {
     .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
     .then(({ ok, data }) => {
       btn.disabled = false;
-      btn.textContent = "Start Tracking";
+      btn.textContent = "Start tracking";
 
       if (!ok) {
         showError(data.error || "Failed to track product.");
@@ -112,7 +115,7 @@ function trackProduct() {
     })
     .catch(() => {
       btn.disabled = false;
-      btn.textContent = "Start Tracking";
+      btn.textContent = "Start tracking";
       showError("Network error. Please try again.");
     });
 }

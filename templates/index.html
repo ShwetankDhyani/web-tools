@@ -3,61 +3,70 @@
 
 {% block content %}
 <section class="hero">
-  <h1>Your Everyday <span class="gradient-text">Web Toolkit</span></h1>
-  <p class="hero-sub">Free, fast, and private. No sign-ups. No tracking.</p>
+  <h1>Your everyday <span class="gradient-text">web toolkit</span></h1>
+  <p class="hero-sub">Download videos, read past paywalls, and track prices — free, fast, and respectful of your privacy.</p>
   <p class="hero-domain">webtools.wiki</p>
 </section>
 
 <section class="tools-grid">
   <a href="/video-downloader" class="tool-card">
-    <div class="tool-icon">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <polygon points="23 7 16 12 23 17 23 7"/>
-        <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-      </svg>
+    <div class="tool-card-top">
+      <div class="tool-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polygon points="23 7 16 12 23 17 23 7"/>
+          <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+        </svg>
+      </div>
+      <span class="tool-tag">No account</span>
     </div>
     <h2>Video Downloader</h2>
-    <p>Download videos from YouTube, Vimeo, Twitter, Reddit, and hundreds of other sites. Choose quality and format.</p>
-    <span class="tool-cta">Try it &rarr;</span>
+    <p>Download from YouTube, Vimeo, Twitter, Reddit, TikTok, and 1,000+ sites. Pick your quality, then save the file.</p>
+    <span class="tool-cta">Open tool &rarr;</span>
   </a>
 
   <a href="/paywall-remover" class="tool-card">
-    <div class="tool-icon">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-        <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
-      </svg>
+    <div class="tool-card-top">
+      <div class="tool-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+        </svg>
+      </div>
+      <span class="tool-tag">No account</span>
     </div>
     <h2>Paywall Remover</h2>
-    <p>Read articles behind paywalls. We fetch the original content and present it in a clean, distraction-free format.</p>
-    <span class="tool-cta">Try it &rarr;</span>
+    <p>Paste an article URL and read it in a clean reader view — without subscriptions or clutter.</p>
+    <span class="tool-cta">Open tool &rarr;</span>
   </a>
 
-  <a href="/price-tracker" class="tool-card">
-    <div class="tool-icon">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="12" y1="1" x2="12" y2="23"/>
-        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-      </svg>
+  <a href="/price-tracker" class="tool-card tool-card-featured">
+    <div class="tool-card-top">
+      <div class="tool-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="12" y1="1" x2="12" y2="23"/>
+          <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+        </svg>
+      </div>
+      <span class="tool-tag tool-tag-telegram">Telegram alerts</span>
     </div>
     <h2>Price Tracker</h2>
-    <p>Track product prices from any online store. Get an instant email alert when the price drops below your target.</p>
-    <span class="tool-cta">Try it &rarr;</span>
+    <p>Monitor product prices on any store. When the price hits your target, you get a Telegram message — not email.</p>
+    <span class="tool-cta">Open tool &rarr;</span>
   </a>
 </section>
 
 <section class="features">
   <div class="feature">
-    <h3>100% Free</h3>
-    <p>No premium tiers, no hidden fees. Every tool is free to use, always.</p>
+    <h3>Free to use</h3>
+    <p>No premium tiers or paywalls on our tools. Everything here stays free.</p>
   </div>
   <div class="feature">
-    <h3>Privacy First</h3>
-    <p>We don't store your data. No accounts, no cookies, no tracking scripts.</p>
+    <h3>Privacy-minded</h3>
+    <p>Video and paywall tools need no account. Price Tracker only uses your Telegram username for login and alerts.</p>
   </div>
   <div class="feature">
-    <h3>Open Source</h3>
-    <p>Inspect, fork, and contribute. Transparency builds trust.</p>
+    <h3>Open source</h3>
+    <p>Inspect the code, self-host, or contribute. Transparency builds trust.</p>
   </div>
 </section>
 {% endblock %}

@@ -3,9 +3,15 @@
 
 {% block content %}
 <section class="tool-page">
+  {% set crumb = "Admin" %}
+  {% include "partials/breadcrumb.html" %}
+
   <div class="admin-header">
-    <h1>Price Tracker Admin</h1>
-    <a href="/price-tracker" class="btn-secondary btn-sm">&larr; Back to Tracker</a>
+    <div>
+      <h1>Price Tracker Admin</h1>
+      <p class="tool-desc">System overview, check history, and bulk maintenance.</p>
+    </div>
+    <a href="/price-tracker" class="btn-secondary btn-sm">&larr; Back to tracker</a>
   </div>
 
   <!-- Status cards -->
@@ -32,7 +38,7 @@
     </div>
     <div class="stat-card">
       <span class="stat-value" id="statCheckTotal">—</span>
-      <span class="stat-label">Check iterations</span>
+      <span class="stat-label">Price checks (all time)</span>
     </div>
     <div class="stat-card stat-card-ok">
       <span class="stat-value" id="statCheckOk">—</span>
@@ -134,7 +140,7 @@ function loadCheckHistory() {
     .then(rows => {
       const container = document.getElementById("checkHistoryContainer");
       if (!rows.length) {
-        container.innerHTML = "<p class='admin-empty'>No checks logged yet. Runs appear after cron or manual checks.</p>";
+        container.innerHTML = "<p class='admin-empty'>No checks logged yet. Counts update after cron runs or when someone taps Check Now.</p>";
         return;
       }
       container.innerHTML = `
