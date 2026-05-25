@@ -26,8 +26,28 @@ Runs at `http://localhost:5000`.
 
 ## Production
 
+Use **Gunicorn on port 8000** (nginx should `proxy_pass` to the same port).
+
 ```bash
-gunicorn app:app --bind 0.0.0.0:8000 --workers 4 --threads 4
+gunicorn app:app --bind 127.0.0.1:8000 --workers 2 --threads 4
+```
+
+Systemd unit example: `deploy/webtools.service` (edit paths/user), then:
+
+```bash
+sudo cp deploy/webtools.service /etc/systemd/system/webtools.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now webtools
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/
+```
+
+**502 Bad Gateway** usually means nginx and the app use different ports. Check:
+
+```bash
+sudo grep proxy_pass /etc/nginx/sites-enabled/*
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:5000/
+journalctl -u webtools -n 20 --no-pager
 ```
 
 Cron (price checks):

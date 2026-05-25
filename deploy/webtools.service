@@ -1,0 +1,17 @@
+[Unit]
+Description=WebTools.wiki (Gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=setu_dhyani
+Group=setu_dhyani
+WorkingDirectory=/home/setu_dhyani/web-tools
+Environment=PATH=/home/setu_dhyani/web-tools/venv/bin:/usr/local/bin:/usr/bin
+# Use venv gunicorn if present, else system gunicorn
+ExecStart=/home/setu_dhyani/web-tools/venv/bin/gunicorn app:app --bind 127.0.0.1:8000 --workers 2 --threads 4 --timeout 120
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
