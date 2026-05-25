@@ -26,12 +26,15 @@
       <span class="stat-value" id="statErroring">—</span>
       <span class="stat-label">Failing (3+ errors)</span>
     </div>
+    <div class="stat-card">
+      <span class="stat-value" id="statUsers">—</span>
+      <span class="stat-label">Total Users</span>
+    </div>
   </div>
 
-  <!-- Last check and Telegram status -->
+  <!-- Last check -->
   <div class="admin-info-bar">
     <span id="lastCheckedInfo">Last checked: —</span>
-    <span id="telegramInfo">Telegram: —</span>
   </div>
 
   <!-- Bulk actions -->
@@ -57,8 +60,12 @@
 {% block scripts %}
 <script>
 document.addEventListener("DOMContentLoaded", () => {
-  loadStatus();
-  loadAdminProducts();
+  fetch("/api/auth/me").then(r => r.json()).then(data => {
+    if (!data.logged_in) { window.location.href = "/price-tracker/login"; return; }
+    if (!data.is_admin) { window.location.href = "/price-tracker"; return; }
+    loadStatus();
+    loadAdminProducts();
+  });
 });
 
 function loadStatus() {
@@ -69,13 +76,12 @@ function loadStatus() {
       document.getElementById("statActive").textContent = data.active;
       document.getElementById("statNotified").textContent = data.notified;
       document.getElementById("statErroring").textContent = data.erroring;
+      document.getElementById("statUsers").textContent = data.total_users || 0;
       if (data.erroring > 0) {
         document.getElementById("statErrorCard").classList.add("has-errors");
       }
       document.getElementById("lastCheckedInfo").textContent =
         "Last checked: " + (data.last_checked ? timeAgo(new Date(data.last_checked)) : "never");
-      document.getElementById("telegramInfo").textContent =
-        "Telegram: " + (data.telegram_configured ? "configured" : "not set");
     });
 }
 
@@ -98,6 +104,7 @@ function loadAdminProducts() {
           <thead>
             <tr>
               <th>Product</th>
+              <th>User</th>
               <th>Price</th>
               <th>Target</th>
               <th>Status</th>
@@ -142,6 +149,7 @@ function renderAdminRow(p) {
         <div class="admin-product-name">${name}</div>
         <a href="${p.url}" target="_blank" rel="noopener" class="admin-product-url">${shortUrl}</a>
       </td>
+      <td>@${p.username || '—'}</td>
       <td>${priceDisplay}</td>
       <td>${cur}${p.target_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
       <td>${status}</td>

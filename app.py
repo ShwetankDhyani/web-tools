@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import random
 import re
 import sqlite3
 import subprocess
@@ -8,6 +9,7 @@ import tempfile
 import threading
 import uuid
 from datetime import datetime, timezone
+from functools import wraps
 from urllib.parse import urlparse
 
 import requests
@@ -19,13 +21,17 @@ from flask import (
     Flask,
     Response,
     jsonify,
+    redirect,
     render_template,
     request,
     send_file,
+    session,
+    url_for,
 )
 from readability import Document
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", uuid.uuid4().hex)
 
 DOWNLOAD_DIR = os.path.join(tempfile.gettempdir(), "web_tools_downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
@@ -57,6 +63,7 @@ def _init_db():
             current_price REAL,
             target_price REAL NOT NULL,
             currency TEXT NOT NULL DEFAULT '$',
+            username TEXT NOT NULL DEFAULT '',
             last_checked TEXT,
             notified INTEGER DEFAULT 0,
             created_at TEXT NOT NULL,
@@ -65,10 +72,16 @@ def _init_db():
             last_error TEXT DEFAULT ''
         );
 
-        CREATE TABLE IF NOT EXISTS telegram_config (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            username TEXT NOT NULL DEFAULT '',
-            enabled INTEGER NOT NULL DEFAULT 0
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL,
+            is_admin INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS otp_codes (
+            username TEXT PRIMARY KEY,
+            code TEXT NOT NULL,
+            created_at TEXT NOT NULL
         );
     """)
     conn.commit()
@@ -76,6 +89,72 @@ def _init_db():
 
 
 _init_db()
+
+# Admin username (set via env or defaults to first user who logs in)
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "").lower().strip()
+
+
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
+
+def _get_current_user() -> str | None:
+    """Return the logged-in Telegram username from session, or None."""
+    return session.get("telegram_user")
+
+
+def _is_admin() -> bool:
+    """Check if the current user is the admin."""
+    user = _get_current_user()
+    if not user:
+        return False
+    if ADMIN_USERNAME and user == ADMIN_USERNAME:
+        return True
+    conn = _get_db()
+    row = conn.execute("SELECT is_admin FROM users WHERE username = ?", (user,)).fetchone()
+    conn.close()
+    return bool(row and row["is_admin"])
+
+
+def login_required(f):
+    """Decorator: redirect to login if not authenticated."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not _get_current_user():
+            return redirect(url_for("price_tracker_login_page"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def api_login_required(f):
+    """Decorator: return 401 JSON if not authenticated."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not _get_current_user():
+            return jsonify({"error": "Login required"}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+def _send_otp_telegram(username: str, code: str) -> bool:
+    """Send an OTP code to a user via CallMeBot Telegram."""
+    text = f"Your WebTools.wiki login code: {code}\n\nThis code expires in 5 minutes."
+    try:
+        api_url = (
+            f"https://api.callmebot.com/text.php"
+            f"?user=@{urllib.parse.quote(username)}"
+            f"&text={urllib.parse.quote(text)}"
+        )
+        resp = requests.get(api_url, timeout=15)
+        body = resp.text.lower()
+        if "error" in body or "permission denied" in body:
+            logger.error("OTP Telegram error for @%s: %s", username, resp.text[:200])
+            return False
+        return True
+    except Exception as e:
+        logger.error("Failed to send OTP to @%s: %s", username, e)
+        return False
+
 
 # ---------------------------------------------------------------------------
 # Routes – Pages
@@ -97,13 +176,124 @@ def paywall_remover_page():
 
 
 @app.route("/price-tracker")
+@login_required
 def price_tracker_page():
     return render_template("price_tracker.html")
 
 
 @app.route("/price-tracker/admin")
+@login_required
 def price_tracker_admin_page():
+    if not _is_admin():
+        return redirect(url_for("price_tracker_page"))
     return render_template("price_tracker_admin.html")
+
+
+@app.route("/price-tracker/login")
+def price_tracker_login_page():
+    if _get_current_user():
+        return redirect(url_for("price_tracker_page"))
+    return render_template("price_tracker_login.html")
+
+
+# ---------------------------------------------------------------------------
+# API – Auth
+# ---------------------------------------------------------------------------
+
+@app.route("/api/auth/request-otp", methods=["POST"])
+def auth_request_otp():
+    """Send a one-time login code via Telegram."""
+    data = request.get_json(force=True)
+    username = (data.get("username") or "").strip().lower().lstrip("@")
+    if not username:
+        return jsonify({"error": "Telegram username is required"}), 400
+    if not re.match(r'^[a-z0-9_]{5,32}$', username):
+        return jsonify({"error": "Invalid Telegram username"}), 400
+
+    code = f"{random.randint(100000, 999999)}"
+    now = datetime.now(timezone.utc).isoformat()
+
+    conn = _get_db()
+    conn.execute(
+        "INSERT OR REPLACE INTO otp_codes (username, code, created_at) VALUES (?, ?, ?)",
+        (username, code, now),
+    )
+    conn.commit()
+    conn.close()
+
+    if not _send_otp_telegram(username, code):
+        return jsonify({"error": "Could not send code. Make sure you've messaged @CallMeBot_txtbot on Telegram first."}), 400
+
+    return jsonify({"ok": True, "message": "Login code sent to your Telegram."})
+
+
+@app.route("/api/auth/verify-otp", methods=["POST"])
+def auth_verify_otp():
+    """Verify the OTP and create a session."""
+    data = request.get_json(force=True)
+    username = (data.get("username") or "").strip().lower().lstrip("@")
+    code = (data.get("code") or "").strip()
+
+    if not username or not code:
+        return jsonify({"error": "Username and code are required"}), 400
+
+    conn = _get_db()
+    row = conn.execute(
+        "SELECT * FROM otp_codes WHERE username = ?", (username,)
+    ).fetchone()
+
+    if not row or row["code"] != code:
+        conn.close()
+        return jsonify({"error": "Invalid code. Please try again."}), 400
+
+    # Check expiry (5 minutes)
+    created = datetime.fromisoformat(row["created_at"])
+    if (datetime.now(timezone.utc) - created).total_seconds() > 300:
+        conn.execute("DELETE FROM otp_codes WHERE username = ?", (username,))
+        conn.commit()
+        conn.close()
+        return jsonify({"error": "Code expired. Request a new one."}), 400
+
+    # Delete used OTP
+    conn.execute("DELETE FROM otp_codes WHERE username = ?", (username,))
+
+    # Create or update user
+    now = datetime.now(timezone.utc).isoformat()
+    existing = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+    if not existing:
+        # First user to register becomes admin if ADMIN_USERNAME is not set
+        user_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        is_admin = 1 if (user_count == 0 and not ADMIN_USERNAME) else 0
+        conn.execute(
+            "INSERT INTO users (username, created_at, is_admin) VALUES (?, ?, ?)",
+            (username, now, is_admin),
+        )
+
+    conn.commit()
+    conn.close()
+
+    session["telegram_user"] = username
+    session.permanent = True
+    return jsonify({"ok": True, "username": username})
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def auth_logout():
+    session.pop("telegram_user", None)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/auth/me")
+def auth_me():
+    """Return current user info."""
+    user = _get_current_user()
+    if not user:
+        return jsonify({"logged_in": False})
+    return jsonify({
+        "logged_in": True,
+        "username": user,
+        "is_admin": _is_admin(),
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -674,13 +864,10 @@ def _shorten_url(url: str) -> str:
 
 
 def _send_telegram_alert(product: dict, new_price: float):
-    """Send a Telegram alert via CallMeBot."""
-    conn = _get_db()
-    config = conn.execute("SELECT * FROM telegram_config WHERE id = 1").fetchone()
-    conn.close()
-
-    if not config or not config["enabled"] or not config["username"]:
-        logger.info("Telegram not configured — skipping")
+    """Send a Telegram alert to the product's owner via CallMeBot."""
+    username = product.get("username", "")
+    if not username:
+        logger.info("No username on product — skipping alert")
         return False
 
     cur = product.get("currency", "$")
@@ -697,10 +884,10 @@ def _send_telegram_alert(product: dict, new_price: float):
     try:
         api_url = (
             f"https://api.callmebot.com/text.php"
-            f"?user=@{urllib.parse.quote(config['username'])}"
+            f"?user=@{urllib.parse.quote(username)}"
             f"&text={urllib.parse.quote(text)}"
         )
-        logger.info("Sending Telegram alert to @%s", config["username"])
+        logger.info("Sending Telegram alert to @%s", username)
         resp = requests.get(api_url, timeout=15)
         body = resp.text.lower()
         if "error" in body or "permission denied" in body:
@@ -717,8 +904,10 @@ def _send_telegram_alert(product: dict, new_price: float):
 
 
 @app.route("/api/price/track", methods=["POST"])
+@api_login_required
 def price_track():
     """Add a product to track."""
+    user = _get_current_user()
     data = request.get_json(force=True)
     url = data.get("url", "").strip()
     target_price = data.get("target_price")
@@ -743,9 +932,9 @@ def price_track():
     conn = _get_db()
     conn.execute(
         """INSERT INTO tracked_products
-           (id, url, name, current_price, target_price, currency, last_checked, created_at, price_history)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (product_id, url, name, current_price, target_price, currency, now, now, json.dumps(history)),
+           (id, url, name, current_price, target_price, currency, username, last_checked, created_at, price_history)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (product_id, url, name, current_price, target_price, currency, user, now, now, json.dumps(history)),
     )
     conn.commit()
     conn.close()
@@ -755,6 +944,7 @@ def price_track():
         product = {
             "id": product_id, "url": url, "name": name,
             "current_price": current_price, "target_price": target_price,
+            "username": user, "currency": currency,
         }
         if _send_telegram_alert(product, current_price):
             conn = _get_db()
@@ -774,11 +964,14 @@ def price_track():
 
 
 @app.route("/api/price/products")
+@api_login_required
 def price_products():
-    """List all tracked products."""
+    """List tracked products for the current user."""
+    user = _get_current_user()
     conn = _get_db()
     rows = conn.execute(
-        "SELECT * FROM tracked_products ORDER BY created_at DESC"
+        "SELECT * FROM tracked_products WHERE username = ? ORDER BY created_at DESC",
+        (user,),
     ).fetchall()
     conn.close()
     products = []
@@ -790,15 +983,22 @@ def price_products():
 
 
 @app.route("/api/price/delete/<product_id>", methods=["DELETE"])
+@api_login_required
 def price_delete(product_id: str):
+    user = _get_current_user()
     conn = _get_db()
-    conn.execute("DELETE FROM tracked_products WHERE id = ?", (product_id,))
+    # Users can only delete their own products; admins can delete any
+    if _is_admin():
+        conn.execute("DELETE FROM tracked_products WHERE id = ?", (product_id,))
+    else:
+        conn.execute("DELETE FROM tracked_products WHERE id = ? AND username = ?", (product_id, user))
     conn.commit()
     conn.close()
     return jsonify({"ok": True})
 
 
 @app.route("/api/price/check/<product_id>", methods=["POST"])
+@api_login_required
 def price_check_now(product_id: str):
     """Manually trigger a price check for a specific product."""
     conn = _get_db()
@@ -846,44 +1046,17 @@ def price_check_now(product_id: str):
     })
 
 
-@app.route("/api/price/telegram-config", methods=["GET", "POST"])
-def price_telegram_config():
-    """Get or set Telegram (CallMeBot) configuration."""
-    conn = _get_db()
-
-    if request.method == "GET":
-        config = conn.execute("SELECT * FROM telegram_config WHERE id = 1").fetchone()
-        conn.close()
-        if not config:
-            return jsonify({"username": "", "enabled": False, "configured": False})
-        return jsonify({
-            "username": config["username"],
-            "enabled": bool(config["enabled"]),
-            "configured": bool(config["username"]),
-        })
-
-    data = request.get_json(force=True)
-    conn.execute("DELETE FROM telegram_config")
-    conn.execute(
-        """INSERT INTO telegram_config (id, username, enabled)
-           VALUES (1, ?, ?)""",
-        (
-            data.get("username", ""),
-            1 if data.get("enabled", True) else 0,
-        ),
-    )
-    conn.commit()
-    conn.close()
-    return jsonify({"ok": True, "message": "Telegram configuration saved."})
-
-
 @app.route("/api/price/test-notification", methods=["POST"])
+@api_login_required
 def test_notification():
-    """Send a test Telegram notification to verify config works."""
+    """Send a test Telegram notification to verify the user's account works."""
+    user = _get_current_user()
     test_product = {
         "name": "Test Product",
         "url": "https://example.com/product",
         "target_price": 50.00,
+        "username": user,
+        "currency": "$",
     }
     result = _send_telegram_alert(test_product, 42.99)
     return jsonify({"ok": result})
@@ -894,17 +1067,20 @@ def test_notification():
 # ---------------------------------------------------------------------------
 
 @app.route("/api/price/status")
+@api_login_required
 def price_tracker_status():
-    """Overview of tracker health."""
+    """Overview of tracker health (admin only)."""
+    if not _is_admin():
+        return jsonify({"error": "Admin access required"}), 403
     conn = _get_db()
     total = conn.execute("SELECT COUNT(*) FROM tracked_products").fetchone()[0]
     notified = conn.execute("SELECT COUNT(*) FROM tracked_products WHERE notified = 1").fetchone()[0]
     active = total - notified
     erroring = conn.execute("SELECT COUNT(*) FROM tracked_products WHERE error_count >= 3").fetchone()[0]
+    user_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     last_checked_row = conn.execute(
         "SELECT last_checked FROM tracked_products ORDER BY last_checked DESC LIMIT 1"
     ).fetchone()
-    telegram = conn.execute("SELECT * FROM telegram_config WHERE id = 1").fetchone()
     conn.close()
 
     return jsonify({
@@ -912,12 +1088,13 @@ def price_tracker_status():
         "active": active,
         "notified": notified,
         "erroring": erroring,
+        "total_users": user_count,
         "last_checked": last_checked_row["last_checked"] if last_checked_row else None,
-        "telegram_configured": bool(telegram and telegram["username"]),
     })
 
 
 @app.route("/api/price/admin/products")
+@api_login_required
 def admin_products():
     """List all products with error info for admin view."""
     conn = _get_db()
@@ -934,6 +1111,7 @@ def admin_products():
 
 
 @app.route("/api/price/admin/cleanup", methods=["POST"])
+@api_login_required
 def admin_cleanup():
     """Remove notified products older than N days."""
     data = request.get_json(force=True)
@@ -953,6 +1131,7 @@ def admin_cleanup():
 
 
 @app.route("/api/price/admin/delete-erroring", methods=["POST"])
+@api_login_required
 def admin_delete_erroring():
     """Remove products with 3+ consecutive scraping failures."""
     conn = _get_db()
@@ -964,6 +1143,7 @@ def admin_delete_erroring():
 
 
 @app.route("/api/price/admin/delete-all-notified", methods=["POST"])
+@api_login_required
 def admin_delete_all_notified():
     """Remove all notified products."""
     conn = _get_db()
@@ -975,6 +1155,7 @@ def admin_delete_all_notified():
 
 
 @app.route("/api/price/admin/reset-errors/<product_id>", methods=["POST"])
+@api_login_required
 def admin_reset_errors(product_id: str):
     """Reset error count for a product (retry scraping)."""
     conn = _get_db()

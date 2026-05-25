@@ -6,43 +6,17 @@
   <h1>Price Tracker</h1>
   <p class="tool-desc">Track product prices from any online store. Get notified on Telegram when the price drops below your target.</p>
 
-  <!-- Telegram notification settings bar -->
-  <div class="notif-settings-bar">
-    <div class="notif-status">
-      <span id="telegramStatus" class="notif-chip">Telegram: <span id="telegramStatusText">not set</span></span>
+  <!-- User bar -->
+  <div class="user-bar">
+    <div class="user-info">
+      Logged in as <strong>@<span id="currentUser"></span></strong>
     </div>
-    <div class="notif-actions">
-      <button class="btn-secondary btn-sm" onclick="toggleTelegramConfig()">Configure Telegram</button>
-      <button class="btn-secondary btn-sm" id="testNotifBtn" onclick="testNotification()" style="display:none;">Test Alert</button>
+    <div class="user-actions">
+      <button class="btn-secondary btn-sm" id="testNotifBtn" onclick="testNotification()">Test Alert</button>
+      <button class="btn-secondary btn-sm" onclick="logout()">Logout</button>
     </div>
   </div>
   <span id="testNotifResult" style="font-size: 0.85rem; margin-top: -0.75rem; display: block; margin-bottom: 1rem;"></span>
-
-  <!-- Telegram config form (hidden) -->
-  <div id="telegramConfig" class="email-config hidden">
-    <h3>Telegram Notifications</h3>
-    <p class="tool-desc">Get alerts via <a href="https://www.callmebot.com/" target="_blank" rel="noopener">CallMeBot</a> (free).</p>
-
-    <div class="config-setup-steps">
-      <p><strong>One-time setup:</strong></p>
-      <ol>
-        <li>Open Telegram and search for <strong>@CallMeBot_txtbot</strong></li>
-        <li>Send <code>/start</code> to the bot</li>
-        <li>The bot will confirm — enter your Telegram username below (without @)</li>
-      </ol>
-    </div>
-
-    <div class="config-grid config-grid-single">
-      <div class="config-field">
-        <label for="telegramUsername">Telegram Username (without @)</label>
-        <input type="text" id="telegramUsername" placeholder="your_username" />
-      </div>
-    </div>
-    <div class="config-actions">
-      <button class="btn-primary" id="saveTelegramBtn" onclick="saveTelegramConfig()">Save</button>
-      <button class="btn-secondary" onclick="toggleTelegramConfig()">Cancel</button>
-    </div>
-  </div>
 
   <!-- Error -->
   <div id="errorSection" class="error-section hidden">
@@ -83,7 +57,7 @@
     <button class="btn-primary" id="trackBtn" onclick="trackProduct()">Start Tracking</button>
   </div>
 
-  <div class="admin-link">
+  <div class="admin-link" id="adminLink" style="display:none;">
     <a href="/price-tracker/admin">Admin Dashboard</a> — manage all products, view errors, bulk cleanup
   </div>
 </section>

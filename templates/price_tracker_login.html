@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Login – Price Tracker – WebTools.wiki{% endblock %}
+
+{% block content %}
+<section class="tool-page login-page">
+  <h1>Price Tracker Login</h1>
+  <p class="tool-desc">Log in with your Telegram account to track prices.<br>
+  You must have messaged <strong>@CallMeBot_txtbot</strong> on Telegram first.</p>
+
+  <!-- Step 1: Enter username -->
+  <div class="login-card" id="stepUsername">
+    <h3>Step 1: Enter your Telegram username</h3>
+    <div class="form-row-single">
+      <input type="text" id="loginUsername" placeholder="your_username (without @)" autocomplete="off" />
+    </div>
+    <button class="btn-primary" id="sendOtpBtn" onclick="requestOTP()">Send Login Code</button>
+    <p class="login-hint">A 6-digit code will be sent to your Telegram via CallMeBot.</p>
+  </div>
+
+  <!-- Step 2: Enter OTP -->
+  <div class="login-card hidden" id="stepOtp">
+    <h3>Step 2: Enter the code from Telegram</h3>
+    <p class="login-subtext">Code sent to <strong>@<span id="otpSentTo"></span></strong></p>
+    <div class="form-row-single">
+      <input type="text" id="loginCode" placeholder="123456" maxlength="6" autocomplete="one-time-code" />
+    </div>
+    <button class="btn-primary" id="verifyBtn" onclick="verifyOTP()">Verify & Login</button>
+    <p class="login-link"><a href="#" onclick="backToStep1(); return false;">Use a different username</a></p>
+  </div>
+
+  <div id="loginError" class="login-error hidden"></div>
+
+  <!-- Setup instructions -->
+  <div class="login-setup">
+    <h4>First time? Setup takes 30 seconds:</h4>
+    <ol>
+      <li>Open Telegram, search for <strong>@CallMeBot_txtbot</strong></li>
+      <li>Send <code>/start</code> to the bot</li>
+      <li>Come back here and log in with your Telegram username</li>
+    </ol>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let pendingUsername = "";
+
+function requestOTP() {
+  const input = document.getElementById("loginUsername");
+  const username = input.value.trim().toLowerCase().replace(/^@/, "");
+  if (!username) { showLoginError("Enter your Telegram username."); return; }
+
+  const btn = document.getElementById("sendOtpBtn");
+  btn.disabled = true;
+  btn.textContent = "Sending...";
+  hideLoginError();
+
+  fetch("/api/auth/request-otp", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({username})
+  })
+    .then(r => r.json().then(data => ({ok: r.ok, data})))
+    .then(({ok, data}) => {
+      btn.disabled = false;
+      btn.textContent = "Send Login Code";
+      if (!ok) {
+        showLoginError(data.error || "Failed to send code.");
+        return;
+      }
+      pendingUsername = username;
+      document.getElementById("otpSentTo").textContent = username;
+      document.getElementById("stepUsername").classList.add("hidden");
+      document.getElementById("stepOtp").classList.remove("hidden");
+      document.getElementById("loginCode").focus();
+    })
+    .catch(() => {
+      btn.disabled = false;
+      btn.textContent = "Send Login Code";
+      showLoginError("Network error. Try again.");
+    });
+}
+
+function verifyOTP() {
+  const code = document.getElementById("loginCode").value.trim();
+  if (!code || code.length < 6) { showLoginError("Enter the 6-digit code."); return; }
+
+  const btn = document.getElementById("verifyBtn");
+  btn.disabled = true;
+  btn.textContent = "Verifying...";
+  hideLoginError();
+
+  fetch("/api/auth/verify-otp", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({username: pendingUsername, code})
+  })
+    .then(r => r.json().then(data => ({ok: r.ok, data})))
+    .then(({ok, data}) => {
+      btn.disabled = false;
+      btn.textContent = "Verify & Login";
+      if (!ok) {
+        showLoginError(data.error || "Invalid code.");
+        return;
+      }
+      window.location.href = "/price-tracker";
+    })
+    .catch(() => {
+      btn.disabled = false;
+      btn.textContent = "Verify & Login";
+      showLoginError("Network error. Try again.");
+    });
+}
+
+function backToStep1() {
+  document.getElementById("stepOtp").classList.add("hidden");
+  document.getElementById("stepUsername").classList.remove("hidden");
+  document.getElementById("loginCode").value = "";
+  hideLoginError();
+}
+
+function showLoginError(msg) {
+  const el = document.getElementById("loginError");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+}
+
+function hideLoginError() {
+  document.getElementById("loginError").classList.add("hidden");
+}
+
+document.getElementById("loginUsername").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") requestOTP();
+});
+document.getElementById("loginCode").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") verifyOTP();
+});
+</script>
+{% endblock %}

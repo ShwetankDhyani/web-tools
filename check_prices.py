@@ -69,13 +69,10 @@ def _shorten_url(url: str) -> str:
 
 
 def _send_telegram_alert(product: dict, new_price: float) -> bool:
-    """Send a Telegram alert via CallMeBot."""
-    conn = _get_db()
-    config = conn.execute("SELECT * FROM telegram_config WHERE id = 1").fetchone()
-    conn.close()
-
-    if not config or not config["enabled"] or not config["username"]:
-        logger.info("Telegram not configured — skipping")
+    """Send a Telegram alert to the product's owner via CallMeBot."""
+    username = product.get("username", "")
+    if not username:
+        logger.info("No username on product — skipping alert")
         return False
 
     cur = product.get("currency", "$")
@@ -92,10 +89,10 @@ def _send_telegram_alert(product: dict, new_price: float) -> bool:
     try:
         api_url = (
             f"https://api.callmebot.com/text.php"
-            f"?user=@{urllib.parse.quote(config['username'])}"
+            f"?user=@{urllib.parse.quote(username)}"
             f"&text={urllib.parse.quote(text)}"
         )
-        logger.info("Sending Telegram alert to @%s for '%s'", config["username"], product.get("name"))
+        logger.info("Sending Telegram alert to @%s for '%s'", username, product.get("name"))
         resp = requests.get(api_url, timeout=15)
         body = resp.text.lower()
         if "error" in body or "permission denied" in body:

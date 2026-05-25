@@ -1,57 +1,27 @@
 document.addEventListener("DOMContentLoaded", () => {
-  checkTelegramConfig();
+  loadUserInfo();
   loadProducts();
 });
 
-function checkTelegramConfig() {
-  fetch("/api/price/telegram-config")
+function loadUserInfo() {
+  fetch("/api/auth/me")
     .then((r) => r.json())
     .then((data) => {
-      const chip = document.getElementById("telegramStatusText");
-      const testBtn = document.getElementById("testNotifBtn");
-      if (data.configured) {
-        chip.textContent = "@" + data.username;
-        chip.parentElement.classList.add("configured");
-        testBtn.style.display = "inline-flex";
-      } else {
-        chip.textContent = "not set";
-        chip.parentElement.classList.remove("configured");
-        testBtn.style.display = "none";
+      if (!data.logged_in) {
+        window.location.href = "/price-tracker/login";
+        return;
+      }
+      document.getElementById("currentUser").textContent = data.username;
+      if (data.is_admin) {
+        document.getElementById("adminLink").style.display = "";
       }
     });
 }
 
-function toggleTelegramConfig() {
-  document.getElementById("telegramConfig").classList.toggle("hidden");
-}
-
-function saveTelegramConfig() {
-  const btn = document.getElementById("saveTelegramBtn");
-  btn.disabled = true;
-  btn.textContent = "Saving...";
-
-  fetch("/api/price/telegram-config", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      username: document.getElementById("telegramUsername").value.trim(),
-      enabled: true,
-    }),
-  })
-    .then((r) => r.json())
-    .then(() => {
-      btn.textContent = "Saved!";
-      setTimeout(() => {
-        btn.textContent = "Save";
-        btn.disabled = false;
-        toggleTelegramConfig();
-        checkTelegramConfig();
-      }, 1500);
-    })
-    .catch(() => {
-      btn.textContent = "Save";
-      btn.disabled = false;
-    });
+function logout() {
+  fetch("/api/auth/logout", { method: "POST" }).then(() => {
+    window.location.href = "/price-tracker/login";
+  });
 }
 
 function testNotification() {
@@ -67,7 +37,7 @@ function testNotification() {
       btn.disabled = false;
       btn.textContent = "Test Alert";
       if (data.ok) {
-        result.textContent = "Test message sent to Telegram!";
+        result.textContent = "Test message sent to your Telegram!";
         result.style.color = "var(--accent)";
       } else {
         result.textContent =
@@ -239,18 +209,16 @@ function renderProduct(p) {
             <span class="price-label">Target</span>
             <span class="price-value">${cur}${p.target_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
           </div>
-          <div class="price-item price-item-info">
-            ${savingsHtml}
-          </div>
+          ${savingsHtml}
         </div>
-        ${chartSvg}
         <div class="product-meta">
           <span>Checked ${lastChecked}</span>
         </div>
+        ${chartSvg}
       </div>
       <div class="product-actions">
-        <button class="btn-small btn-check" onclick="checkNow('${p.id}', this)" title="Check price now">Check Now</button>
-        <button class="btn-small btn-delete" onclick="confirmDelete('${p.id}', '${(p.name || "this product").replace(/'/g, "\\'")}')" title="Stop tracking">Remove</button>
+        <button class="btn-small btn-secondary" onclick="checkNow('${p.id}', this)" title="Check price now">Check Now</button>
+        <button class="btn-small btn-secondary" onclick="confirmDelete('${p.id}', '${(p.name || "this product").replace(/'/g, "\\'")}')" title="Stop tracking">Remove</button>
       </div>
     </div>
   `;

@@ -781,7 +781,7 @@ img { max-width: 100%; height: auto; }
 
 .admin-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 1rem;
   margin-bottom: 1.25rem;
 }
@@ -930,6 +930,80 @@ img { max-width: 100%; height: auto; }
   font-weight: 600;
 }
 .admin-link a:hover { text-decoration: underline; }
+
+/* ---- Login Page ---- */
+.login-page { max-width: 500px; margin: 0 auto; }
+.login-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+.login-card h3 { margin-bottom: 0.75rem; font-size: 1rem; }
+.login-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.75rem;
+}
+.login-subtext {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+.login-link {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+}
+.login-link a { color: var(--primary); text-decoration: none; }
+.login-link a:hover { text-decoration: underline; }
+.login-error {
+  background: rgba(231, 76, 60, 0.1);
+  border: 1px solid #e74c3c;
+  border-radius: var(--radius);
+  color: #e74c3c;
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+.login-setup {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-top: 2rem;
+}
+.login-setup h4 { margin-bottom: 0.5rem; font-size: 0.95rem; }
+.login-setup ol {
+  padding-left: 1.25rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.login-setup li { margin-bottom: 0.4rem; }
+.login-setup code {
+  background: rgba(108, 92, 231, 0.15);
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.85rem;
+}
+
+/* ---- User Bar ---- */
+.user-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem 1rem;
+  margin-bottom: 1.25rem;
+}
+.user-info { font-size: 0.85rem; color: var(--text-muted); }
+.user-actions { display: flex; gap: 0.5rem; }
+
+@media (max-width: 768px) {
+  .user-bar { flex-direction: column; gap: 0.5rem; text-align: center; }
+}
 
 @media (max-width: 768px) {
   .admin-stats { grid-template-columns: repeat(2, 1fr); }
