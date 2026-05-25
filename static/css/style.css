@@ -1,5 +1,5 @@
 /* ============================================================
-   WebTools – Dark-themed modern UI
+   WebTools.wiki – Dark-themed modern UI
    ============================================================ */
 
 :root {
@@ -55,6 +55,10 @@ img { max-width: 100%; height: auto; }
   color: var(--text);
 }
 .nav-brand:hover { text-decoration: none; }
+.brand-tld {
+  color: var(--accent);
+  font-weight: 500;
+}
 .nav-links { display: flex; gap: 1.5rem; }
 .nav-links a {
   color: var(--text-muted);
@@ -93,6 +97,16 @@ img { max-width: 100%; height: auto; }
   font-size: 1.2rem;
   color: var(--text-muted);
 }
+.hero-domain {
+  display: inline-block;
+  margin-top: 1.25rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  opacity: 0.5;
+}
 
 /* ---- Tools Grid ---- */
 .tools-grid {
@@ -102,6 +116,7 @@ img { max-width: 100%; height: auto; }
   margin-bottom: 3rem;
 }
 .tool-card {
+  position: relative;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -110,12 +125,28 @@ img { max-width: 100%; height: auto; }
   display: flex;
   flex-direction: column;
   color: var(--text);
+  overflow: hidden;
 }
 .tool-card:hover {
   transform: translateY(-4px);
   border-color: var(--primary);
-  box-shadow: 0 8px 30px rgba(108, 92, 231, 0.15);
+  box-shadow: 0 8px 30px rgba(108, 92, 231, 0.12);
   text-decoration: none;
+}
+.tool-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+  border-radius: var(--radius) var(--radius) 0 0;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.tool-card:hover::before {
+  opacity: 1;
 }
 .tool-icon {
   margin-bottom: 1rem;

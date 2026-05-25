@@ -1,6 +1,6 @@
-# WebTools
+# WebTools.wiki
 
-A collection of free, privacy-first web utilities.
+A collection of free, privacy-first web utilities at [webtools.wiki](https://webtools.wiki).
 
 ## Tools
 
@@ -9,6 +9,9 @@ Download videos from YouTube, Vimeo, Twitter, Reddit, TikTok, and 1000+ sites. C
 
 ### Paywall Remover
 Read articles behind paywalls. Fetches the original content and presents it in a clean, distraction-free reader view.
+
+### Price Tracker
+Track product prices from Amazon, Flipkart, and other stores. Get instant email alerts when prices drop below your target. Uses stealth scraping with TLS fingerprint spoofing via curl_cffi.
 
 ## Quick Start
 

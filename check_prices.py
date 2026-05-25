@@ -87,7 +87,7 @@ def _send_price_alert(product: dict, new_price: float) -> bool:
                 View Product
             </a>
             <p style="color: #8b8f9a; margin-top: 20px; font-size: 12px;">
-                Sent by WebTools Price Tracker
+                Sent by WebTools.wiki Price Tracker
             </p>
         </div>
     </body>
