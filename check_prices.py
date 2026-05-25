@@ -3,7 +3,7 @@
 Standalone price checker — designed to be run by cron.
 
 Executes once: checks all tracked products, updates prices,
-sends alerts if below target, then exits cleanly.
+sends Telegram alerts if below target, then exits cleanly.
 No loops, no threads, no persistent state.
 
 Usage:
@@ -17,14 +17,11 @@ import json
 import logging
 import os
 import random
-import smtplib
 import sqlite3
 import sys
 import time
 import urllib.parse
 from datetime import datetime, timezone
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from urllib.parse import urlparse
 
 import requests
@@ -56,63 +53,7 @@ def _get_db() -> sqlite3.Connection:
 
 
 # ---------------------------------------------------------------------------
-# Email alerts
-# ---------------------------------------------------------------------------
-
-def _send_price_alert(product: dict, new_price: float) -> bool:
-    """Send an email alert about a price drop."""
-    conn = _get_db()
-    config = conn.execute("SELECT * FROM email_config WHERE id = 1").fetchone()
-    conn.close()
-
-    if not config or not config["smtp_user"] or not config["smtp_pass"]:
-        logger.warning("Email not configured — skipping alert for %s", product.get("name"))
-        return False
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"Price Drop Alert: {product['name'] or 'Product'}"
-    msg["From"] = config["smtp_user"]
-    msg["To"] = product["email"]
-
-    html_body = f"""
-    <html>
-    <body style="font-family: Arial, sans-serif; background: #0b0d11; color: #e4e6eb; padding: 20px;">
-        <div style="max-width: 600px; margin: 0 auto; background: #13161d; padding: 30px; border-radius: 12px; border: 1px solid #262b36;">
-            <h1 style="color: #6c5ce7; margin-top: 0;">Price Drop Alert!</h1>
-            <h2 style="color: #e4e6eb;">{product['name'] or 'Your tracked product'}</h2>
-            <p style="font-size: 18px;">
-                Current price: <strong style="color: #00cec9; font-size: 24px;">${new_price:.2f}</strong>
-            </p>
-            <p style="color: #8b8f9a;">
-                Your target price: ${product['target_price']:.2f}
-            </p>
-            <a href="{product['url']}" style="display: inline-block; margin-top: 15px; padding: 12px 24px;
-                background: #6c5ce7; color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">
-                View Product
-            </a>
-            <p style="color: #8b8f9a; margin-top: 20px; font-size: 12px;">
-                Sent by WebTools.wiki Price Tracker
-            </p>
-        </div>
-    </body>
-    </html>
-    """
-    msg.attach(MIMEText(html_body, "html"))
-
-    try:
-        with smtplib.SMTP(config["smtp_host"], config["smtp_port"]) as server:
-            server.starttls()
-            server.login(config["smtp_user"], config["smtp_pass"])
-            server.sendmail(config["smtp_user"], product["email"], msg.as_string())
-        logger.info("Alert sent to %s for '%s' (price: %.2f)", product["email"], product["name"], new_price)
-        return True
-    except Exception as e:
-        logger.error("Failed to send email to %s: %s", product["email"], e)
-        return False
-
-
-# ---------------------------------------------------------------------------
-# WhatsApp alerts (CallMeBot)
+# Telegram alerts (CallMeBot)
 # ---------------------------------------------------------------------------
 
 def _shorten_url(url: str) -> str:
@@ -127,17 +68,15 @@ def _shorten_url(url: str) -> str:
         return url[:100] if len(url) > 100 else url
 
 
-def _send_whatsapp_alert(product: dict, new_price: float) -> bool:
-    """Send a WhatsApp or Telegram alert via CallMeBot."""
+def _send_telegram_alert(product: dict, new_price: float) -> bool:
+    """Send a Telegram alert via CallMeBot."""
     conn = _get_db()
-    config = conn.execute("SELECT * FROM whatsapp_config WHERE id = 1").fetchone()
+    config = conn.execute("SELECT * FROM telegram_config WHERE id = 1").fetchone()
     conn.close()
 
-    if not config or not config["enabled"]:
-        logger.info("WhatsApp/Telegram not configured or disabled")
+    if not config or not config["enabled"] or not config["username"]:
+        logger.info("Telegram not configured — skipping")
         return False
-
-    platform = config["platform"] if "platform" in config.keys() else "whatsapp"
 
     short_url = _shorten_url(product['url'])
     text = (
@@ -150,29 +89,21 @@ def _send_whatsapp_alert(product: dict, new_price: float) -> bool:
     )
 
     try:
-        if platform == "telegram":
-            api_url = (
-                f"https://api.callmebot.com/text.php"
-                f"?user=@{urllib.parse.quote(config['phone'])}"
-                f"&text={urllib.parse.quote(text)}"
-            )
-        else:
-            api_url = (
-                f"https://api.callmebot.com/whatsapp.php"
-                f"?phone={urllib.parse.quote(config['phone'])}"
-                f"&text={urllib.parse.quote(text)}"
-                f"&apikey={urllib.parse.quote(config['api_key'])}"
-            )
-        logger.info("Sending %s alert to %s for '%s'", platform, config["phone"], product.get("name"))
+        api_url = (
+            f"https://api.callmebot.com/text.php"
+            f"?user=@{urllib.parse.quote(config['username'])}"
+            f"&text={urllib.parse.quote(text)}"
+        )
+        logger.info("Sending Telegram alert to @%s for '%s'", config["username"], product.get("name"))
         resp = requests.get(api_url, timeout=15)
         body = resp.text.lower()
         if "error" in body or "permission denied" in body:
-            logger.error("%s API error: %s", platform.title(), resp.text[:200])
+            logger.error("Telegram API error: %s", resp.text[:200])
             return False
-        logger.info("%s alert sent successfully", platform.title())
+        logger.info("Telegram alert sent successfully")
         return True
     except Exception as e:
-        logger.error("Failed to send %s alert: %s", platform, e)
+        logger.error("Failed to send Telegram alert: %s", e)
         return False
 
 
@@ -220,9 +151,7 @@ def check_all_prices():
 
         if new_price <= product["target_price"]:
             logger.info("Price %.2f is at or below target %.2f!", new_price, product["target_price"])
-            email_sent = _send_price_alert(product, new_price)
-            msg_sent = _send_whatsapp_alert(product, new_price)
-            if email_sent or msg_sent:
+            if _send_telegram_alert(product, new_price):
                 conn.execute(
                     "UPDATE tracked_products SET notified = 1 WHERE id = ?",
                     (product["id"],),

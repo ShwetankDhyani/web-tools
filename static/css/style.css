@@ -459,6 +459,10 @@ img { max-width: 100%; height: auto; }
   gap: 1rem;
   margin: 1rem 0;
 }
+.config-grid-single {
+  grid-template-columns: 1fr;
+  max-width: 400px;
+}
 .config-field label {
   display: block;
   font-size: 0.85rem;
@@ -598,6 +602,10 @@ img { max-width: 100%; height: auto; }
 }
 .form-field input:focus { border-color: var(--primary); }
 .form-field input::placeholder { color: var(--text-muted); }
+.form-row-single {
+  max-width: 300px;
+  margin-bottom: 1rem;
+}
 
 .track-status {
   padding: 1rem 1.5rem;

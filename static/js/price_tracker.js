@@ -1,44 +1,41 @@
 document.addEventListener("DOMContentLoaded", () => {
-  checkEmailConfig();
-  checkWhatsAppConfig();
+  checkTelegramConfig();
   loadProducts();
 });
 
-function checkEmailConfig() {
-  fetch("/api/price/email-config")
+function checkTelegramConfig() {
+  fetch("/api/price/telegram-config")
     .then((r) => r.json())
     .then((data) => {
-      const chip = document.getElementById("emailStatusText");
+      const chip = document.getElementById("telegramStatusText");
+      const testBtn = document.getElementById("testNotifBtn");
       if (data.configured) {
-        chip.textContent = data.smtp_user;
+        chip.textContent = "@" + data.username;
         chip.parentElement.classList.add("configured");
+        testBtn.style.display = "inline-flex";
       } else {
         chip.textContent = "not set";
         chip.parentElement.classList.remove("configured");
+        testBtn.style.display = "none";
       }
-      updateTestBtn();
     });
 }
 
-function toggleEmailConfig() {
-  const el = document.getElementById("emailConfig");
-  el.classList.toggle("hidden");
-  document.getElementById("whatsappConfig").classList.add("hidden");
+function toggleTelegramConfig() {
+  document.getElementById("telegramConfig").classList.toggle("hidden");
 }
 
-function saveEmailConfig() {
-  const btn = document.getElementById("saveEmailBtn");
+function saveTelegramConfig() {
+  const btn = document.getElementById("saveTelegramBtn");
   btn.disabled = true;
   btn.textContent = "Saving...";
 
-  fetch("/api/price/email-config", {
+  fetch("/api/price/telegram-config", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      smtp_host: document.getElementById("smtpHost").value,
-      smtp_port: parseInt(document.getElementById("smtpPort").value),
-      smtp_user: document.getElementById("smtpUser").value,
-      smtp_pass: document.getElementById("smtpPass").value,
+      username: document.getElementById("telegramUsername").value.trim(),
+      enabled: true,
     }),
   })
     .then((r) => r.json())
@@ -47,8 +44,8 @@ function saveEmailConfig() {
       setTimeout(() => {
         btn.textContent = "Save";
         btn.disabled = false;
-        toggleEmailConfig();
-        checkEmailConfig();
+        toggleTelegramConfig();
+        checkTelegramConfig();
       }, 1500);
     })
     .catch(() => {
@@ -57,63 +54,26 @@ function saveEmailConfig() {
     });
 }
 
-function checkWhatsAppConfig() {
-  fetch("/api/price/whatsapp-config")
-    .then((r) => r.json())
-    .then((data) => {
-      const chip = document.getElementById("msgStatusText");
-      if (data.configured) {
-        const label =
-          data.platform === "telegram" ? "Telegram" : "WhatsApp";
-        chip.textContent = label + ": " + data.phone;
-        chip.parentElement.classList.add("configured");
-      } else {
-        chip.textContent = "not set";
-        chip.parentElement.classList.remove("configured");
-      }
-      updateTestBtn();
-    });
-}
-
-function updateTestBtn() {
-  Promise.all([
-    fetch("/api/price/email-config").then((r) => r.json()),
-    fetch("/api/price/whatsapp-config").then((r) => r.json()),
-  ]).then(([email, msg]) => {
-    const btn = document.getElementById("testNotifBtn");
-    btn.style.display =
-      email.configured || msg.configured ? "inline-flex" : "none";
-  });
-}
-
-function testNotifications() {
+function testNotification() {
   const btn = document.getElementById("testNotifBtn");
   const result = document.getElementById("testNotifResult");
   btn.disabled = true;
   btn.textContent = "Sending...";
   result.textContent = "";
 
-  fetch("/api/price/test-notification", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ channel: "all" }),
-  })
+  fetch("/api/price/test-notification", { method: "POST" })
     .then((r) => r.json())
     .then((data) => {
       btn.disabled = false;
       btn.textContent = "Test Alert";
-      const parts = [];
-      if (data.results.email === true) parts.push("Email sent");
-      else if (data.results.email === false) parts.push("Email failed");
-      else if (data.results.email === "not_configured")
-        parts.push("Email not configured");
-      if (data.results.messaging === true) parts.push("Message sent");
-      else if (data.results.messaging === false) parts.push("Message failed");
-      result.textContent = parts.join(" · ") || "No channels configured";
-      result.style.color =
-        data.results.email === true || data.results.messaging === true
-          ? "var(--accent)"
-          : "#e74c3c";
+      if (data.ok) {
+        result.textContent = "Test message sent to Telegram!";
+        result.style.color = "var(--accent)";
+      } else {
+        result.textContent =
+          "Failed — make sure you messaged @CallMeBot_txtbot with /start first";
+        result.style.color = "#e74c3c";
+      }
     })
     .catch(() => {
       btn.disabled = false;
@@ -123,84 +83,12 @@ function testNotifications() {
     });
 }
 
-function toggleWhatsAppConfig() {
-  const el = document.getElementById("whatsappConfig");
-  el.classList.toggle("hidden");
-  document.getElementById("emailConfig").classList.add("hidden");
-}
-
-function switchPlatform(platform) {
-  document.getElementById("waPlatform").value = platform;
-  document
-    .getElementById("tabWhatsApp")
-    .classList.toggle("active", platform === "whatsapp");
-  document
-    .getElementById("tabTelegram")
-    .classList.toggle("active", platform === "telegram");
-  document
-    .getElementById("whatsappSetup")
-    .classList.toggle("hidden", platform !== "whatsapp");
-  document
-    .getElementById("telegramSetup")
-    .classList.toggle("hidden", platform !== "telegram");
-
-  const phoneLabel = document.getElementById("waPhoneLabel");
-  const phoneInput = document.getElementById("waPhone");
-  const apiKeyField = document
-    .getElementById("waApiKey")
-    .closest(".config-field");
-
-  if (platform === "telegram") {
-    phoneLabel.textContent = "Telegram Username (without @)";
-    phoneInput.placeholder = "your_username";
-    apiKeyField.style.display = "none";
-  } else {
-    phoneLabel.textContent = "Phone Number (with country code)";
-    phoneInput.placeholder = "+919876543210";
-    apiKeyField.style.display = "";
-  }
-}
-
-function saveWhatsAppConfig() {
-  const btn = document.getElementById("saveWhatsAppBtn");
-  btn.disabled = true;
-  btn.textContent = "Saving...";
-
-  const platform = document.getElementById("waPlatform").value;
-
-  fetch("/api/price/whatsapp-config", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      phone: document.getElementById("waPhone").value,
-      api_key: document.getElementById("waApiKey").value || "telegram",
-      enabled: true,
-      platform: platform,
-    }),
-  })
-    .then((r) => r.json())
-    .then(() => {
-      btn.textContent = "Saved!";
-      setTimeout(() => {
-        btn.textContent = "Save";
-        btn.disabled = false;
-        toggleWhatsAppConfig();
-        checkWhatsAppConfig();
-      }, 1500);
-    })
-    .catch(() => {
-      btn.textContent = "Save";
-      btn.disabled = false;
-    });
-}
-
 function trackProduct() {
   const url = document.getElementById("productUrl").value.trim();
   const targetPrice = document.getElementById("targetPrice").value;
-  const email = document.getElementById("alertEmail").value.trim();
 
-  if (!url || !targetPrice || !email) {
-    showError("Please fill in all fields.");
+  if (!url || !targetPrice) {
+    showError("Please fill in both fields.");
     return;
   }
 
@@ -218,7 +106,6 @@ function trackProduct() {
     body: JSON.stringify({
       url: url,
       target_price: parseFloat(targetPrice),
-      email: email,
     }),
   })
     .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
@@ -357,7 +244,6 @@ function renderProduct(p) {
         ${chartSvg}
         <div class="product-meta">
           <span>Checked ${lastChecked}</span>
-          <span>Alerts to ${p.email}</span>
         </div>
       </div>
       <div class="product-actions">

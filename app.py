@@ -2,15 +2,12 @@ import json
 import logging
 import os
 import re
-import smtplib
 import sqlite3
 import subprocess
 import tempfile
 import threading
 import uuid
 from datetime import datetime, timezone
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from urllib.parse import urlparse
 
 import requests
@@ -59,27 +56,16 @@ def _init_db():
             name TEXT,
             current_price REAL,
             target_price REAL NOT NULL,
-            email TEXT NOT NULL,
             last_checked TEXT,
             notified INTEGER DEFAULT 0,
             created_at TEXT NOT NULL,
             price_history TEXT DEFAULT '[]'
         );
 
-        CREATE TABLE IF NOT EXISTS email_config (
+        CREATE TABLE IF NOT EXISTS telegram_config (
             id INTEGER PRIMARY KEY CHECK (id = 1),
-            smtp_host TEXT NOT NULL DEFAULT 'smtp.gmail.com',
-            smtp_port INTEGER NOT NULL DEFAULT 587,
-            smtp_user TEXT NOT NULL DEFAULT '',
-            smtp_pass TEXT NOT NULL DEFAULT ''
-        );
-
-        CREATE TABLE IF NOT EXISTS whatsapp_config (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            phone TEXT NOT NULL DEFAULT '',
-            api_key TEXT NOT NULL DEFAULT '',
-            enabled INTEGER NOT NULL DEFAULT 0,
-            platform TEXT NOT NULL DEFAULT 'whatsapp'
+            username TEXT NOT NULL DEFAULT '',
+            enabled INTEGER NOT NULL DEFAULT 0
         );
     """)
     conn.commit()
@@ -653,57 +639,6 @@ def paywall_read():
 from scraper import scrape_price as _scrape_price
 
 
-def _send_price_alert(product: dict, new_price: float):
-    """Send an email alert about a price drop."""
-    conn = _get_db()
-    config = conn.execute("SELECT * FROM email_config WHERE id = 1").fetchone()
-    conn.close()
-
-    if not config or not config["smtp_user"] or not config["smtp_pass"]:
-        return False
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"Price Drop Alert: {product['name'] or 'Product'}"
-    msg["From"] = config["smtp_user"]
-    msg["To"] = product["email"]
-
-    html_body = f"""
-    <html>
-    <body style="font-family: Arial, sans-serif; background: #0b0d11; color: #e4e6eb; padding: 20px;">
-        <div style="max-width: 600px; margin: 0 auto; background: #13161d; padding: 30px; border-radius: 12px; border: 1px solid #262b36;">
-            <h1 style="color: #6c5ce7; margin-top: 0;">Price Drop Alert!</h1>
-            <h2 style="color: #e4e6eb;">{product['name'] or 'Your tracked product'}</h2>
-            <p style="font-size: 18px;">
-                Current price: <strong style="color: #00cec9; font-size: 24px;">${new_price:.2f}</strong>
-            </p>
-            <p style="color: #8b8f9a;">
-                Your target price: ${product['target_price']:.2f}
-            </p>
-            <a href="{product['url']}" style="display: inline-block; margin-top: 15px; padding: 12px 24px;
-                background: #6c5ce7; color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">
-                View Product
-            </a>
-            <p style="color: #8b8f9a; margin-top: 20px; font-size: 12px;">
-                Sent by WebTools.wiki Price Tracker
-            </p>
-        </div>
-    </body>
-    </html>
-    """
-    msg.attach(MIMEText(html_body, "html"))
-
-    try:
-        with smtplib.SMTP(config["smtp_host"], config["smtp_port"]) as server:
-            server.starttls()
-            server.login(config["smtp_user"], config["smtp_pass"])
-            server.sendmail(config["smtp_user"], product["email"], msg.as_string())
-        logger.info("Email alert sent to %s", product["email"])
-        return True
-    except Exception as e:
-        logger.error("Email send failed: %s", e)
-        return False
-
-
 def _shorten_url(url: str) -> str:
     """Shorten a product URL for messaging (keep domain + short path)."""
     try:
@@ -716,17 +651,15 @@ def _shorten_url(url: str) -> str:
         return url[:100] if len(url) > 100 else url
 
 
-def _send_whatsapp_alert(product: dict, new_price: float):
-    """Send a WhatsApp or Telegram alert via CallMeBot."""
+def _send_telegram_alert(product: dict, new_price: float):
+    """Send a Telegram alert via CallMeBot."""
     conn = _get_db()
-    config = conn.execute("SELECT * FROM whatsapp_config WHERE id = 1").fetchone()
+    config = conn.execute("SELECT * FROM telegram_config WHERE id = 1").fetchone()
     conn.close()
 
-    if not config or not config["enabled"]:
-        logger.info("WhatsApp/Telegram not configured or disabled — skipping")
+    if not config or not config["enabled"] or not config["username"]:
+        logger.info("Telegram not configured — skipping")
         return False
-
-    platform = config["platform"] if "platform" in config.keys() else "whatsapp"
 
     short_url = _shorten_url(product['url'])
     text = (
@@ -739,29 +672,21 @@ def _send_whatsapp_alert(product: dict, new_price: float):
     )
 
     try:
-        if platform == "telegram":
-            api_url = (
-                f"https://api.callmebot.com/text.php"
-                f"?user=@{urllib.parse.quote(config['phone'])}"
-                f"&text={urllib.parse.quote(text)}"
-            )
-        else:
-            api_url = (
-                f"https://api.callmebot.com/whatsapp.php"
-                f"?phone={urllib.parse.quote(config['phone'])}"
-                f"&text={urllib.parse.quote(text)}"
-                f"&apikey={urllib.parse.quote(config['api_key'])}"
-            )
-        logger.info("Sending %s alert to %s", platform, config["phone"])
+        api_url = (
+            f"https://api.callmebot.com/text.php"
+            f"?user=@{urllib.parse.quote(config['username'])}"
+            f"&text={urllib.parse.quote(text)}"
+        )
+        logger.info("Sending Telegram alert to @%s", config["username"])
         resp = requests.get(api_url, timeout=15)
         body = resp.text.lower()
         if "error" in body or "permission denied" in body:
-            logger.error("%s API error: %s", platform.title(), resp.text[:200])
+            logger.error("Telegram API error: %s", resp.text[:200])
             return False
-        logger.info("%s alert sent successfully (status=%d)", platform.title(), resp.status_code)
+        logger.info("Telegram alert sent successfully")
         return True
     except Exception as e:
-        logger.error("Failed to send %s alert: %s", platform, e)
+        logger.error("Failed to send Telegram alert: %s", e)
         return False
 
 
@@ -774,14 +699,11 @@ def price_track():
     data = request.get_json(force=True)
     url = data.get("url", "").strip()
     target_price = data.get("target_price")
-    email = data.get("email", "").strip()
 
     if not url:
         return jsonify({"error": "Product URL is required"}), 400
     if not target_price or float(target_price) <= 0:
         return jsonify({"error": "A valid target price is required"}), 400
-    if not email or "@" not in email:
-        return jsonify({"error": "A valid email is required"}), 400
 
     target_price = float(target_price)
 
@@ -797,9 +719,9 @@ def price_track():
     conn = _get_db()
     conn.execute(
         """INSERT INTO tracked_products
-           (id, url, name, current_price, target_price, email, last_checked, created_at, price_history)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (product_id, url, name, current_price, target_price, email, now, now, json.dumps(history)),
+           (id, url, name, current_price, target_price, last_checked, created_at, price_history)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (product_id, url, name, current_price, target_price, now, now, json.dumps(history)),
     )
     conn.commit()
     conn.close()
@@ -809,11 +731,8 @@ def price_track():
         product = {
             "id": product_id, "url": url, "name": name,
             "current_price": current_price, "target_price": target_price,
-            "email": email,
         }
-        email_sent = _send_price_alert(product, current_price)
-        msg_sent = _send_whatsapp_alert(product, current_price)
-        if email_sent or msg_sent:
+        if _send_telegram_alert(product, current_price):
             conn = _get_db()
             conn.execute("UPDATE tracked_products SET notified = 1 WHERE id = ?", (product_id,))
             conn.commit()
@@ -887,9 +806,7 @@ def price_check_now(product_id: str):
 
     notified = False
     if new_price <= product["target_price"] and not product["notified"]:
-        email_sent = _send_price_alert(product, new_price)
-        msg_sent = _send_whatsapp_alert(product, new_price)
-        if email_sent or msg_sent:
+        if _send_telegram_alert(product, new_price):
             conn.execute("UPDATE tracked_products SET notified = 1 WHERE id = ?", (product_id,))
             notified = True
 
@@ -904,107 +821,47 @@ def price_check_now(product_id: str):
     })
 
 
-@app.route("/api/price/email-config", methods=["GET", "POST"])
-def price_email_config():
-    """Get or set SMTP email configuration."""
+@app.route("/api/price/telegram-config", methods=["GET", "POST"])
+def price_telegram_config():
+    """Get or set Telegram (CallMeBot) configuration."""
     conn = _get_db()
 
     if request.method == "GET":
-        config = conn.execute("SELECT * FROM email_config WHERE id = 1").fetchone()
+        config = conn.execute("SELECT * FROM telegram_config WHERE id = 1").fetchone()
         conn.close()
         if not config:
-            return jsonify({"smtp_host": "smtp.gmail.com", "smtp_port": 587, "smtp_user": "", "configured": False})
+            return jsonify({"username": "", "enabled": False, "configured": False})
         return jsonify({
-            "smtp_host": config["smtp_host"],
-            "smtp_port": config["smtp_port"],
-            "smtp_user": config["smtp_user"],
-            "configured": bool(config["smtp_user"] and config["smtp_pass"]),
-        })
-
-    data = request.get_json(force=True)
-    conn.execute("DELETE FROM email_config")
-    conn.execute(
-        """INSERT INTO email_config (id, smtp_host, smtp_port, smtp_user, smtp_pass)
-           VALUES (1, ?, ?, ?, ?)""",
-        (
-            data.get("smtp_host", "smtp.gmail.com"),
-            data.get("smtp_port", 587),
-            data.get("smtp_user", ""),
-            data.get("smtp_pass", ""),
-        ),
-    )
-    conn.commit()
-    conn.close()
-    return jsonify({"ok": True, "message": "Email configuration saved."})
-
-
-@app.route("/api/price/whatsapp-config", methods=["GET", "POST"])
-def price_whatsapp_config():
-    """Get or set WhatsApp/Telegram (CallMeBot) configuration."""
-    conn = _get_db()
-
-    if request.method == "GET":
-        config = conn.execute("SELECT * FROM whatsapp_config WHERE id = 1").fetchone()
-        conn.close()
-        if not config:
-            return jsonify({"phone": "", "enabled": False, "configured": False, "platform": "whatsapp"})
-        platform = config["platform"] if "platform" in config.keys() else "whatsapp"
-        return jsonify({
-            "phone": config["phone"],
+            "username": config["username"],
             "enabled": bool(config["enabled"]),
-            "configured": bool(config["phone"] and config["api_key"]),
-            "platform": platform,
+            "configured": bool(config["username"]),
         })
 
     data = request.get_json(force=True)
-    conn.execute("DELETE FROM whatsapp_config")
+    conn.execute("DELETE FROM telegram_config")
     conn.execute(
-        """INSERT INTO whatsapp_config (id, phone, api_key, enabled, platform)
-           VALUES (1, ?, ?, ?, ?)""",
+        """INSERT INTO telegram_config (id, username, enabled)
+           VALUES (1, ?, ?)""",
         (
-            data.get("phone", ""),
-            data.get("api_key", ""),
+            data.get("username", ""),
             1 if data.get("enabled", True) else 0,
-            data.get("platform", "whatsapp"),
         ),
     )
     conn.commit()
     conn.close()
-    platform = data.get("platform", "whatsapp")
-    label = "Telegram" if platform == "telegram" else "WhatsApp"
-    return jsonify({"ok": True, "message": f"{label} configuration saved."})
+    return jsonify({"ok": True, "message": "Telegram configuration saved."})
 
 
 @app.route("/api/price/test-notification", methods=["POST"])
 def test_notification():
-    """Send a test notification to verify config works."""
-    data = request.get_json(force=True)
-    channel = data.get("channel", "all")
-
+    """Send a test Telegram notification to verify config works."""
     test_product = {
         "name": "Test Product",
         "url": "https://example.com/product",
         "target_price": 50.00,
-        "email": "",
     }
-    test_price = 42.99
-
-    results = {}
-
-    if channel in ("email", "all"):
-        conn = _get_db()
-        email_cfg = conn.execute("SELECT * FROM email_config WHERE id = 1").fetchone()
-        conn.close()
-        if email_cfg and email_cfg["smtp_user"]:
-            test_product["email"] = email_cfg["smtp_user"]
-            results["email"] = _send_price_alert(test_product, test_price)
-        else:
-            results["email"] = "not_configured"
-
-    if channel in ("messaging", "all"):
-        results["messaging"] = _send_whatsapp_alert(test_product, test_price)
-
-    return jsonify({"results": results})
+    result = _send_telegram_alert(test_product, 42.99)
+    return jsonify({"ok": result})
 
 
 # ---------------------------------------------------------------------------

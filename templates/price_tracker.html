@@ -4,69 +4,26 @@
 {% block content %}
 <section class="tool-page">
   <h1>Price Tracker</h1>
-  <p class="tool-desc">Track product prices from any online store. Get notified when the price drops below your target.</p>
+  <p class="tool-desc">Track product prices from any online store. Get notified on Telegram when the price drops below your target.</p>
 
-  <!-- Notification settings bar -->
+  <!-- Telegram notification settings bar -->
   <div class="notif-settings-bar">
     <div class="notif-status">
-      <span id="emailStatus" class="notif-chip">Email: <span id="emailStatusText">not set</span></span>
-      <span id="msgStatus" class="notif-chip">Messaging: <span id="msgStatusText">not set</span></span>
+      <span id="telegramStatus" class="notif-chip">Telegram: <span id="telegramStatusText">not set</span></span>
     </div>
     <div class="notif-actions">
-      <button class="btn-secondary btn-sm" onclick="toggleEmailConfig()">Email Settings</button>
-      <button class="btn-secondary btn-sm" onclick="toggleWhatsAppConfig()">WhatsApp / Telegram</button>
-      <button class="btn-secondary btn-sm" id="testNotifBtn" onclick="testNotifications()" style="display:none;">Test Alert</button>
+      <button class="btn-secondary btn-sm" onclick="toggleTelegramConfig()">Configure Telegram</button>
+      <button class="btn-secondary btn-sm" id="testNotifBtn" onclick="testNotification()" style="display:none;">Test Alert</button>
     </div>
   </div>
   <span id="testNotifResult" style="font-size: 0.85rem; margin-top: -0.75rem; display: block; margin-bottom: 1rem;"></span>
 
-  <!-- Email config form (hidden) -->
-  <div id="emailConfig" class="email-config hidden">
-    <h3>Email Configuration</h3>
-    <p class="tool-desc">Use a Gmail App Password or any SMTP server to send alerts.</p>
-    <div class="config-grid">
-      <div class="config-field">
-        <label for="smtpHost">SMTP Host</label>
-        <input type="text" id="smtpHost" value="smtp.gmail.com" />
-      </div>
-      <div class="config-field">
-        <label for="smtpPort">Port</label>
-        <input type="number" id="smtpPort" value="587" />
-      </div>
-      <div class="config-field">
-        <label for="smtpUser">Email</label>
-        <input type="email" id="smtpUser" placeholder="you@gmail.com" />
-      </div>
-      <div class="config-field">
-        <label for="smtpPass">App Password</label>
-        <input type="password" id="smtpPass" placeholder="xxxx xxxx xxxx xxxx" />
-      </div>
-    </div>
-    <div class="config-actions">
-      <button class="btn-primary" id="saveEmailBtn" onclick="saveEmailConfig()">Save</button>
-      <button class="btn-secondary" onclick="toggleEmailConfig()">Cancel</button>
-    </div>
-  </div>
-
-  <!-- Messaging config form (hidden) -->
-  <div id="whatsappConfig" class="email-config hidden">
-    <h3>WhatsApp / Telegram Notifications</h3>
+  <!-- Telegram config form (hidden) -->
+  <div id="telegramConfig" class="email-config hidden">
+    <h3>Telegram Notifications</h3>
     <p class="tool-desc">Get alerts via <a href="https://www.callmebot.com/" target="_blank" rel="noopener">CallMeBot</a> (free).</p>
 
-    <div class="platform-tabs">
-      <button class="platform-tab active" id="tabWhatsApp" onclick="switchPlatform('whatsapp')">WhatsApp</button>
-      <button class="platform-tab" id="tabTelegram" onclick="switchPlatform('telegram')">Telegram</button>
-    </div>
-
-    <div id="whatsappSetup" class="config-setup-steps">
-      <p><strong>One-time setup:</strong></p>
-      <ol>
-        <li>Save <strong>+34 644 44 98 81</strong> in your contacts</li>
-        <li>Send <code>I allow callmebot to send me messages</code> to that number on WhatsApp</li>
-        <li>You'll receive an API key — enter it below with your phone number</li>
-      </ol>
-    </div>
-    <div id="telegramSetup" class="config-setup-steps hidden">
+    <div class="config-setup-steps">
       <p><strong>One-time setup:</strong></p>
       <ol>
         <li>Open Telegram and search for <strong>@CallMeBot_txtbot</strong></li>
@@ -75,20 +32,15 @@
       </ol>
     </div>
 
-    <div class="config-grid">
+    <div class="config-grid config-grid-single">
       <div class="config-field">
-        <label for="waPhone" id="waPhoneLabel">Phone Number (with country code)</label>
-        <input type="text" id="waPhone" placeholder="+919876543210" />
-      </div>
-      <div class="config-field">
-        <label for="waApiKey">API Key</label>
-        <input type="text" id="waApiKey" placeholder="123456" />
+        <label for="telegramUsername">Telegram Username (without @)</label>
+        <input type="text" id="telegramUsername" placeholder="your_username" />
       </div>
     </div>
-    <input type="hidden" id="waPlatform" value="whatsapp" />
     <div class="config-actions">
-      <button class="btn-primary" id="saveWhatsAppBtn" onclick="saveWhatsAppConfig()">Save</button>
-      <button class="btn-secondary" onclick="toggleWhatsAppConfig()">Cancel</button>
+      <button class="btn-primary" id="saveTelegramBtn" onclick="saveTelegramConfig()">Save</button>
+      <button class="btn-secondary" onclick="toggleTelegramConfig()">Cancel</button>
     </div>
   </div>
 
@@ -100,7 +52,7 @@
   <!-- Status -->
   <div id="trackStatus" class="track-status hidden"></div>
 
-  <!-- Tracked Products List (shown first, prominent) -->
+  <!-- Tracked Products List -->
   <div id="productsList" class="products-list">
     <div class="products-header">
       <h3>Your Tracked Products</h3>
@@ -112,7 +64,7 @@
     <div id="emptyState" class="empty-state-box hidden">
       <div class="empty-icon">📦</div>
       <h4>No products tracked yet</h4>
-      <p>Add a product URL below to start tracking its price. You'll get notified when it drops below your target.</p>
+      <p>Add a product URL below to start tracking its price. You'll get notified on Telegram when it drops below your target.</p>
     </div>
   </div>
 
@@ -122,14 +74,10 @@
     <div class="form-row">
       <input type="url" id="productUrl" placeholder="Paste product URL (Amazon, Flipkart, any store...)" />
     </div>
-    <div class="form-row-half">
+    <div class="form-row-single">
       <div class="form-field">
         <label for="targetPrice">Alert me when price drops below</label>
         <input type="number" id="targetPrice" placeholder="99.99" step="0.01" min="0" />
-      </div>
-      <div class="form-field">
-        <label for="alertEmail">Send alert to this email</label>
-        <input type="email" id="alertEmail" placeholder="you@example.com" />
       </div>
     </div>
     <button class="btn-primary" id="trackBtn" onclick="trackProduct()">Start Tracking</button>
