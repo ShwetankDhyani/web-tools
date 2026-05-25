@@ -43,8 +43,8 @@ function testNotification() {
         result.textContent = "Test message sent to your Telegram.";
         result.classList.remove("inline-hint-error");
       } else {
-        result.textContent =
-          "Could not send — open Telegram, message @CallMeBot_txtbot, and send /start first.";
+        const url = data.activate_url || "https://t.me/CallMeBot_txtbot?text=%2Fstart";
+        result.innerHTML = `Could not send. <a href="${url}" target="_blank" rel="noopener" class="link-telegram">Open Telegram &amp; send /start</a> first.`;
         result.classList.add("inline-hint-error");
       }
     })

@@ -5,38 +5,37 @@
 <section class="tool-page login-page">
   {% set crumb = "Sign in" %}
   {% include "partials/breadcrumb.html" %}
-  <div class="login-hero">
-    <div class="login-icon">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-        <line x1="9" y1="10" x2="15" y2="10"/>
-      </svg>
+
+  <header class="tool-header">
+    <div>
+      <h1>Price Tracker</h1>
+      <p class="login-subtitle">Sign in with your Telegram username. Price alerts are sent on Telegram only.</p>
     </div>
-    <h1>Price Tracker</h1>
-    <p class="login-subtitle">Sign in with Telegram to track prices. Alerts are sent to your Telegram — never by email.</p>
-  </div>
+    <span class="tool-pill tool-pill-telegram">Telegram</span>
+  </header>
 
   <div id="loginError" class="login-error hidden"></div>
 
-  <!-- Step 1: Enter username -->
-  <div class="login-card" id="stepUsername">
-    <div class="login-step-label">Step 1</div>
-    <h3>Enter your Telegram username</h3>
+  <div class="panel telegram-activate-wrap">
+    {% include "partials/telegram_activate.html" %}
+  </div>
+
+  <div class="login-card panel" id="stepUsername">
+    <div class="login-step-label">Then sign in</div>
+    <h3>Your Telegram username</h3>
     <div class="login-input-wrap">
       <span class="login-input-prefix">@</span>
-      <input type="text" id="loginUsername" placeholder="username" autocomplete="off" />
+      <input type="text" id="loginUsername" placeholder="username" autocomplete="username" />
     </div>
-    <button class="btn-login" id="sendOtpBtn" onclick="requestOTP()">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-      Send Login Code
+    <button class="btn-login btn-login-secondary" id="sendOtpBtn" onclick="requestOTP()">
+      Send login code to Telegram
     </button>
   </div>
 
-  <!-- Step 2: Enter OTP -->
-  <div class="login-card hidden" id="stepOtp">
-    <div class="login-step-label">Step 2</div>
-    <h3>Enter the code from Telegram</h3>
-    <p class="login-sent-to">Code sent to <strong>@<span id="otpSentTo"></span></strong></p>
+  <div class="login-card panel hidden" id="stepOtp">
+    <div class="login-step-label">Enter code</div>
+    <h3>Check Telegram for your 6-digit code</h3>
+    <p class="login-sent-to">Sent to <strong>@<span id="otpSentTo"></span></strong></p>
     <div class="otp-input-group">
       <input type="text" class="otp-digit" maxlength="1" data-idx="0" inputmode="numeric" autocomplete="one-time-code" />
       <input type="text" class="otp-digit" maxlength="1" data-idx="1" inputmode="numeric" />
@@ -46,33 +45,17 @@
       <input type="text" class="otp-digit" maxlength="1" data-idx="4" inputmode="numeric" />
       <input type="text" class="otp-digit" maxlength="1" data-idx="5" inputmode="numeric" />
     </div>
-    <button class="btn-login" id="verifyBtn" onclick="verifyOTP()">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-      Verify &amp; Login
-    </button>
-    <p class="login-back"><a href="#" onclick="backToStep1(); return false;">&larr; Use a different username</a></p>
-  </div>
-
-  <!-- Setup guide -->
-  <div class="login-guide">
-    <div class="guide-header">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-      <span>New here? Setup in 30 seconds</span>
-    </div>
-    <ol>
-      <li>Open <strong>Telegram</strong> and search for <strong>@CallMeBot_txtbot</strong></li>
-      <li>Send <code>/start</code> to the bot</li>
-      <li>Return here and sign in with the same Telegram username</li>
-    </ol>
+    <button class="btn-login" id="verifyBtn" onclick="verifyOTP()">Verify &amp; continue</button>
+    <p class="login-back"><a href="#" onclick="backToStep1(); return false;">&larr; Different username</a></p>
   </div>
 </section>
 {% endblock %}
 
 {% block scripts %}
 <script>
+const ACTIVATE_URL = {{ callmebot_activate_url|tojson }};
 let pendingUsername = "";
 
-// OTP digit inputs auto-advance
 document.querySelectorAll(".otp-digit").forEach((inp, i, all) => {
   inp.addEventListener("input", () => {
     inp.value = inp.value.replace(/\D/g, "").slice(0, 1);
@@ -85,51 +68,48 @@ document.querySelectorAll(".otp-digit").forEach((inp, i, all) => {
   inp.addEventListener("paste", (e) => {
     e.preventDefault();
     const text = (e.clipboardData.getData("text") || "").replace(/\D/g, "");
-    for (let j = 0; j < Math.min(text.length, all.length); j++) {
-      all[j].value = text[j];
-    }
+    for (let j = 0; j < Math.min(text.length, all.length); j++) all[j].value = text[j];
     if (text.length >= all.length) verifyOTP();
     else all[Math.min(text.length, all.length - 1)].focus();
   });
 });
 
 function getOtpCode() {
-  return Array.from(document.querySelectorAll(".otp-digit")).map(i => i.value).join("");
+  return Array.from(document.querySelectorAll(".otp-digit")).map((i) => i.value).join("");
 }
 
 function requestOTP() {
-  const input = document.getElementById("loginUsername");
-  const username = input.value.trim().toLowerCase().replace(/^@/, "");
+  const username = document.getElementById("loginUsername").value.trim().toLowerCase().replace(/^@/, "");
   if (!username) { showLoginError("Enter your Telegram username."); return; }
 
   const btn = document.getElementById("sendOtpBtn");
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Sending...';
+  btn.textContent = "Sending…";
   hideLoginError();
 
   fetch("/api/auth/request-otp", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({username})
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username }),
   })
-    .then(r => r.json().then(data => ({ok: r.ok, data})))
-    .then(({ok, data}) => {
+    .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
+    .then(({ ok, data }) => {
       btn.disabled = false;
-      btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Send Login Code';
+      btn.textContent = "Send login code to Telegram";
       if (!ok) {
-        showLoginError(data.error || "Failed to send code.");
+        showLoginError(data.error || "Failed to send code.", data.activate_url);
         return;
       }
       pendingUsername = username;
       document.getElementById("otpSentTo").textContent = username;
       document.getElementById("stepUsername").classList.add("hidden");
       document.getElementById("stepOtp").classList.remove("hidden");
-      document.querySelectorAll(".otp-digit").forEach(i => i.value = "");
+      document.querySelectorAll(".otp-digit").forEach((i) => (i.value = ""));
       document.querySelector(".otp-digit").focus();
     })
     .catch(() => {
       btn.disabled = false;
-      btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Send Login Code';
+      btn.textContent = "Send login code to Telegram";
       showLoginError("Network error. Try again.");
     });
 }
@@ -140,18 +120,18 @@ function verifyOTP() {
 
   const btn = document.getElementById("verifyBtn");
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Verifying...';
+  btn.textContent = "Verifying…";
   hideLoginError();
 
   fetch("/api/auth/verify-otp", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({username: pendingUsername, code})
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: pendingUsername, code }),
   })
-    .then(r => r.json().then(data => ({ok: r.ok, data})))
-    .then(({ok, data}) => {
+    .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
+    .then(({ ok, data }) => {
       btn.disabled = false;
-      btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Verify & Login';
+      btn.textContent = "Verify & continue";
       if (!ok) {
         showLoginError(data.error || "Invalid code.");
         return;
@@ -160,7 +140,7 @@ function verifyOTP() {
     })
     .catch(() => {
       btn.disabled = false;
-      btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Verify & Login';
+      btn.textContent = "Verify & continue";
       showLoginError("Network error. Try again.");
     });
 }
@@ -168,13 +148,14 @@ function verifyOTP() {
 function backToStep1() {
   document.getElementById("stepOtp").classList.add("hidden");
   document.getElementById("stepUsername").classList.remove("hidden");
-  document.querySelectorAll(".otp-digit").forEach(i => i.value = "");
+  document.querySelectorAll(".otp-digit").forEach((i) => (i.value = ""));
   hideLoginError();
 }
 
-function showLoginError(msg) {
+function showLoginError(msg, activateUrl) {
   const el = document.getElementById("loginError");
-  el.textContent = msg;
+  const url = activateUrl || ACTIVATE_URL;
+  el.innerHTML = `${msg} <a href="${url}" target="_blank" rel="noopener" class="link-telegram">Open Telegram &amp; send /start</a>`;
   el.classList.remove("hidden");
 }
 

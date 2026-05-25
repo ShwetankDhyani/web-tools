@@ -1326,6 +1326,91 @@ img { max-width: 100%; height: auto; }
   opacity: 0.65;
   cursor: not-allowed;
 }
+.btn-login-secondary {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+.btn-login-secondary:hover:not(:disabled) {
+  border-color: var(--primary);
+  box-shadow: none;
+  transform: none;
+}
+
+.btn-telegram {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.85rem 1.25rem;
+  background: #0088cc;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
+}
+.btn-telegram:hover {
+  background: #0077b5;
+  color: #fff;
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+.link-telegram {
+  color: #6ec8f2;
+  font-weight: 600;
+  text-decoration: underline;
+}
+.link-telegram:hover { color: #9ddcff; }
+
+.telegram-activate-wrap { margin-bottom: 1.25rem; }
+.telegram-activate-title {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+.telegram-activate-desc {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+.telegram-activate-desc code {
+  font-size: 0.85em;
+  padding: 0.1rem 0.35rem;
+  background: var(--surface-2);
+  border-radius: 4px;
+}
+
+.telegram-help {
+  margin-bottom: 1.25rem;
+  padding: 0;
+}
+.telegram-help summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  padding: 0.75rem 1rem;
+  list-style: none;
+}
+.telegram-help summary::-webkit-details-marker { display: none; }
+.telegram-help summary::before {
+  content: "▸ ";
+  display: inline-block;
+  transition: transform 0.2s;
+}
+.telegram-help[open] summary::before { transform: rotate(90deg); }
+.telegram-help[open] summary { margin-bottom: 0; border-bottom: 1px solid var(--border); }
+.telegram-help .telegram-activate {
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.login-error .link-telegram { margin-left: 0.25rem; }
+
 .spinner {
   display: inline-block;
   width: 18px;

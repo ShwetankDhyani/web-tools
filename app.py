@@ -33,6 +33,29 @@ from readability import Document
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", uuid.uuid4().hex)
 
+# CallMeBot — one-tap Telegram link (/start pre-filled for authorization)
+CALLMEBOT_BOT = "CallMeBot_txtbot"
+CALLMEBOT_ACTIVATE_URL = f"https://t.me/{CALLMEBOT_BOT}?text=%2Fstart"
+
+
+@app.context_processor
+def inject_callmebot():
+    return {
+        "callmebot_bot": CALLMEBOT_BOT,
+        "callmebot_activate_url": CALLMEBOT_ACTIVATE_URL,
+    }
+
+
+def _telegram_activate_payload(extra: dict | None = None) -> dict:
+    """JSON fields returned when Telegram delivery fails."""
+    payload = {
+        "error": "Activate Telegram first — tap the link to send /start to CallMeBot.",
+        "activate_url": CALLMEBOT_ACTIVATE_URL,
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
 DOWNLOAD_DIR = os.path.join(tempfile.gettempdir(), "web_tools_downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
@@ -310,7 +333,9 @@ def auth_request_otp():
     conn.close()
 
     if not _send_otp_telegram(username, code):
-        return jsonify({"error": "Could not send code. Make sure you've messaged @CallMeBot_txtbot on Telegram first."}), 400
+        return jsonify(_telegram_activate_payload({
+            "error": "Could not send your login code. Tap “Open Telegram & send /start” below, then try again.",
+        })), 400
 
     return jsonify({"ok": True, "message": "Login code sent to your Telegram."})
 
@@ -1215,7 +1240,12 @@ def test_notification():
         "currency": "$",
     }
     result = _send_telegram_alert(test_product, 42.99)
-    return jsonify({"ok": result})
+    if result:
+        return jsonify({"ok": True})
+    return jsonify(_telegram_activate_payload({
+        "ok": False,
+        "error": "Test message failed. Activate Telegram first.",
+    }))
 
 
 # ---------------------------------------------------------------------------
