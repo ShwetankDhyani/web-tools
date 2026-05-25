@@ -6,7 +6,6 @@ import sqlite3
 import subprocess
 import tempfile
 import threading
-import time
 import uuid
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
@@ -639,143 +638,7 @@ def paywall_read():
 # API – Price Tracker
 # ---------------------------------------------------------------------------
 
-SCRAPE_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.5",
-}
-
-
-def _scrape_price(url: str) -> tuple[str | None, float | None]:
-    """Scrape product name and price from a URL. Returns (name, price)."""
-    try:
-        resp = requests.get(url, headers=SCRAPE_HEADERS, timeout=15, allow_redirects=True)
-        if resp.status_code != 200:
-            return None, None
-
-        soup = BeautifulSoup(resp.text, "lxml")
-        domain = urlparse(url).netloc.lower()
-
-        name = None
-        price = None
-
-        # Try to get product title
-        og_title = soup.find("meta", property="og:title")
-        if og_title and og_title.get("content"):
-            name = og_title["content"].strip()
-        elif soup.title:
-            name = soup.title.get_text(strip=True)
-
-        # Amazon
-        if "amazon" in domain:
-            price_el = (
-                soup.find("span", class_="a-price-whole")
-                or soup.find("span", id="priceblock_ourprice")
-                or soup.find("span", id="priceblock_dealprice")
-                or soup.find("span", class_="a-offscreen")
-            )
-            if price_el:
-                price = _parse_price(price_el.get_text())
-            title_el = soup.find("span", id="productTitle")
-            if title_el:
-                name = title_el.get_text(strip=True)
-
-        # Flipkart
-        elif "flipkart" in domain:
-            price_el = soup.find("div", class_="Nx9bqj") or soup.find("div", class_="_30jeq3")
-            if price_el:
-                price = _parse_price(price_el.get_text())
-
-        # Generic: look for common price patterns in JSON-LD
-        if price is None:
-            for script in soup.find_all("script", type="application/ld+json"):
-                try:
-                    ld = json.loads(script.string)
-                    price = _extract_price_from_ld(ld)
-                    if price is not None:
-                        break
-                except (json.JSONDecodeError, TypeError):
-                    continue
-
-        # Generic fallback: look for price-like patterns in meta tags
-        if price is None:
-            for meta in soup.find_all("meta"):
-                prop = (meta.get("property") or meta.get("name") or "").lower()
-                if "price" in prop and "amount" in prop:
-                    val = meta.get("content", "")
-                    price = _parse_price(val)
-                    if price is not None:
-                        break
-
-        # Generic fallback: regex scan visible text for price patterns
-        if price is None:
-            text = soup.get_text()
-            price_matches = re.findall(
-                r'(?:[$€£₹¥])\s*([\d,]+(?:\.\d{1,2})?)|'
-                r'([\d,]+(?:\.\d{1,2})?)\s*(?:USD|EUR|GBP|INR)',
-                text
-            )
-            for m in price_matches:
-                val = m[0] or m[1]
-                p = _parse_price(val)
-                if p and p > 0:
-                    price = p
-                    break
-
-        return name, price
-
-    except Exception:
-        return None, None
-
-
-def _extract_price_from_ld(data) -> float | None:
-    """Recursively extract price from JSON-LD structured data."""
-    if isinstance(data, dict):
-        if "price" in data:
-            return _parse_price(str(data["price"]))
-        if "lowPrice" in data:
-            return _parse_price(str(data["lowPrice"]))
-        offers = data.get("offers")
-        if offers:
-            return _extract_price_from_ld(offers)
-        for v in data.values():
-            result = _extract_price_from_ld(v)
-            if result is not None:
-                return result
-    elif isinstance(data, list):
-        for item in data:
-            result = _extract_price_from_ld(item)
-            if result is not None:
-                return result
-    return None
-
-
-def _parse_price(text: str) -> float | None:
-    """Extract a numeric price from a text string."""
-    if not text:
-        return None
-    cleaned = re.sub(r'[^\d.,]', '', text.strip())
-    if not cleaned:
-        return None
-    # Handle "1,299.00" or "1.299,00" formats
-    if ',' in cleaned and '.' in cleaned:
-        if cleaned.rindex(',') > cleaned.rindex('.'):
-            cleaned = cleaned.replace('.', '').replace(',', '.')
-        else:
-            cleaned = cleaned.replace(',', '')
-    elif ',' in cleaned:
-        parts = cleaned.split(',')
-        if len(parts[-1]) == 2:
-            cleaned = cleaned.replace(',', '.')
-        else:
-            cleaned = cleaned.replace(',', '')
-    try:
-        return float(cleaned)
-    except ValueError:
-        return None
+from scraper import scrape_price as _scrape_price
 
 
 def _send_price_alert(product: dict, new_price: float):
@@ -827,56 +690,7 @@ def _send_price_alert(product: dict, new_price: float):
         return False
 
 
-def _check_prices_loop():
-    """Background thread that checks prices every 3 minutes."""
-    while True:
-        time.sleep(180)  # 3 minutes
-        try:
-            conn = _get_db()
-            products = conn.execute(
-                "SELECT * FROM tracked_products WHERE notified = 0"
-            ).fetchall()
-            conn.close()
-
-            for product in products:
-                product = dict(product)
-                _, new_price = _scrape_price(product["url"])
-                if new_price is None:
-                    continue
-
-                now = datetime.now(timezone.utc).isoformat()
-                history = json.loads(product["price_history"] or "[]")
-                history.append({"price": new_price, "date": now})
-                # Keep last 100 entries
-                history = history[-100:]
-
-                conn = _get_db()
-                conn.execute(
-                    """UPDATE tracked_products
-                       SET current_price = ?, last_checked = ?, price_history = ?
-                       WHERE id = ?""",
-                    (new_price, now, json.dumps(history), product["id"]),
-                )
-
-                if new_price <= product["target_price"]:
-                    sent = _send_price_alert(product, new_price)
-                    if sent:
-                        conn.execute(
-                            "UPDATE tracked_products SET notified = 1 WHERE id = ?",
-                            (product["id"],),
-                        )
-
-                conn.commit()
-                conn.close()
-
-        except Exception:
-            pass
-
-
-# Start background price checker (only in main process, not reloader)
-if not os.environ.get("WERKZEUG_RUN_MAIN") or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
-    _price_checker_thread = threading.Thread(target=_check_prices_loop, daemon=True)
-    _price_checker_thread.start()
+# Price checking is handled by check_prices.py via cron — no background loop needed.
 
 
 @app.route("/api/price/track", methods=["POST"])
