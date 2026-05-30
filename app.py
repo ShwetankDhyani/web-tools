@@ -1122,7 +1122,7 @@ def price_update(product_id: str):
         conn.close()
         return jsonify({"error": "Product not found"}), 404
     product = dict(product)
-    if not _is_admin() and product["username"] != user:
+    if not _is_admin() and not _user_owns_product(product, user):
         conn.close()
         return jsonify({"error": "Not allowed"}), 403
 
@@ -1160,18 +1160,35 @@ def price_products():
     return jsonify(products)
 
 
+def _user_owns_product(product: dict, user: str) -> bool:
+    """True if product belongs to user (case-insensitive username match)."""
+    owner = (product.get("username") or "").strip().lower()
+    return owner == (user or "").strip().lower()
+
+
 @app.route("/api/price/delete/<product_id>", methods=["DELETE"])
 @api_login_required
 def price_delete(product_id: str):
     user = _get_current_user()
     conn = _get_db()
-    # Users can only delete their own products; admins can delete any
-    if _is_admin():
-        conn.execute("DELETE FROM tracked_products WHERE id = ?", (product_id,))
-    else:
-        conn.execute("DELETE FROM tracked_products WHERE id = ? AND username = ?", (product_id, user))
+    product = conn.execute(
+        "SELECT id, username FROM tracked_products WHERE id = ?", (product_id,)
+    ).fetchone()
+    if not product:
+        conn.close()
+        return jsonify({"error": "Product not found"}), 404
+    product = dict(product)
+    if not _is_admin() and not _user_owns_product(product, user):
+        conn.close()
+        return jsonify({"error": "Not allowed"}), 403
+
+    conn.execute("DELETE FROM check_runs WHERE product_id = ?", (product_id,))
+    conn.execute("DELETE FROM tracked_products WHERE id = ?", (product_id,))
+    deleted = conn.total_changes
     conn.commit()
     conn.close()
+    if deleted < 1:
+        return jsonify({"error": "Product not found"}), 404
     return jsonify({"ok": True})
 
 
@@ -1189,6 +1206,11 @@ def price_check_now(product_id: str):
         return jsonify({"error": "Product not found"}), 404
 
     product = dict(product)
+    user = _get_current_user()
+    if not _is_admin() and not _user_owns_product(product, user):
+        conn.close()
+        return jsonify({"error": "Not allowed"}), 403
+
     _, new_price, scraped_currency, resolved_url = _scrape_price(product["url"])
     now = datetime.now(timezone.utc).isoformat()
 

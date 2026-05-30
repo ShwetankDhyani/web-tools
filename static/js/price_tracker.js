@@ -1,6 +1,20 @@
 document.addEventListener("DOMContentLoaded", () => {
   loadUserInfo();
   loadProducts();
+
+  const productsContainer = document.getElementById("productsContainer");
+  if (productsContainer) {
+    productsContainer.addEventListener("click", (e) => {
+      const removeBtn = e.target.closest("[data-action='remove-product']");
+      if (!removeBtn) return;
+      const id = removeBtn.dataset.productId;
+      const name = removeBtn.dataset.productName || "this product";
+      if (id && confirm(`Stop tracking "${name}"?`)) {
+        deleteProduct(id);
+      }
+    });
+  }
+
   const urlInput = document.getElementById("productUrl");
   if (urlInput) {
     urlInput.addEventListener("input", updateCurrencyHint);
@@ -68,6 +82,14 @@ function escapeHtml(s) {
   const d = document.createElement("div");
   d.textContent = s == null ? "" : String(s);
   return d.innerHTML;
+}
+
+function escapeAttr(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/</g, "&lt;");
 }
 
 function loadUserInfo() {
@@ -304,7 +326,7 @@ function renderProduct(p) {
       </div>
       <div class="product-actions">
         <button type="button" class="btn-small btn-secondary" onclick="checkNow('${p.id}', this)">Check now</button>
-        <button type="button" class="btn-small btn-secondary" onclick="confirmDelete('${p.id}', ${JSON.stringify(p.name || "this product")})">Remove</button>
+        <button type="button" class="btn-small btn-secondary" data-action="remove-product" data-product-id="${escapeAttr(p.id)}" data-product-name="${escapeAttr(p.name || "this product")}">Remove</button>
       </div>
     </article>
   `;
@@ -387,16 +409,17 @@ function checkNow(productId, btn) {
     });
 }
 
-function confirmDelete(productId, productName) {
-  if (confirm(`Stop tracking "${productName}"?`)) {
-    deleteProduct(productId);
-  }
-}
-
 function deleteProduct(productId) {
-  fetch(`/api/price/delete/${productId}`, { method: "DELETE" }).then(() =>
-    loadProducts(),
-  );
+  fetch(`/api/price/delete/${productId}`, { method: "DELETE" })
+    .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
+    .then(({ ok, data }) => {
+      if (!ok) {
+        showError(data.error || "Could not remove product.");
+        return;
+      }
+      loadProducts();
+    })
+    .catch(() => showError("Could not remove product. Try again."));
 }
 
 function showError(msg) {
