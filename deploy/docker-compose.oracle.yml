@@ -1,0 +1,17 @@
+services:
+  webtools:
+    build: ..
+    container_name: webtools
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5000:8000"
+    environment:
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:-changeme}
+      FLASK_SESSION_SECURE: "1"
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-}
+    volumes:
+      - webtools-data:/app
+    # Note: Dockerfile CMD binds 8000 inside container; mapped to host 5000.
+
+volumes:
+  webtools-data:

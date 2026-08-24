@@ -1,0 +1,18 @@
+[Unit]
+Description=WebTools.wiki (Gunicorn on Oracle/VPS)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/web-tools
+EnvironmentFile=-/home/ubuntu/web-tools/.env
+Environment=PATH=/home/ubuntu/web-tools/venv/bin:/usr/local/bin:/usr/bin
+Environment=FLASK_SESSION_SECURE=1
+ExecStart=/home/ubuntu/web-tools/venv/bin/gunicorn app:app --bind 127.0.0.1:5000 --workers 1 --threads 8 --timeout 120
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
