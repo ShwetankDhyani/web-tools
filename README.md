@@ -69,3 +69,11 @@ docker run -p 8000:8000 webtools
 - **Video:** yt-dlp
 - **Articles:** readability-lxml + BeautifulSoup
 - **Frontend:** HTML / CSS / JS (no build step)
+
+
+## Security notes
+
+- Set `FLASK_SECRET_KEY` (required for multi-worker Gunicorn sessions).
+- Set `ADMIN_USERNAME` to your Telegram username.
+- Production video downloads need `yt-dlp` on `PATH` (or the `yt-dlp` Python package for `python -m yt_dlp`).
+- Prefer `--workers 1` for the video downloader, or share download task state across workers.

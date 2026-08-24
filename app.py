@@ -31,7 +31,20 @@ from flask import (
 from readability import Document
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", uuid.uuid4().hex)
+_secret = os.environ.get("FLASK_SECRET_KEY")
+if not _secret:
+    logger.warning(
+        "FLASK_SECRET_KEY is unset — using a random per-process secret. "
+        "Sessions will break across workers; set FLASK_SECRET_KEY in production."
+    )
+    _secret = uuid.uuid4().hex
+app.secret_key = _secret
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    # Enable in production: FLASK_SESSION_SECURE=1
+    SESSION_COOKIE_SECURE=os.environ.get("FLASK_SESSION_SECURE", "0") == "1",
+)
 
 # CallMeBot — one-tap Telegram link (/start pre-filled for authorization)
 CALLMEBOT_BOT = "CallMeBot_txtbot"
@@ -240,6 +253,102 @@ def api_login_required(f):
     return decorated
 
 
+def api_admin_required(f):
+    """Decorator: require authenticated admin user."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not _get_current_user():
+            return jsonify({"error": "Login required"}), 401
+        if not _is_admin():
+            return jsonify({"error": "Admin access required"}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
+def _is_blocked_ip(hostname: str) -> bool:
+    """Return True if hostname resolves to a non-public address."""
+    import ipaddress
+    import socket
+
+    if not hostname:
+        return True
+    host = hostname.strip("[]").lower()
+    if host in {"localhost", "metadata.google.internal"}:
+        return True
+    try:
+        # Literal IP
+        ip = ipaddress.ip_address(host)
+        return (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        )
+    except ValueError:
+        pass
+    try:
+        for info in socket.getaddrinfo(host, None):
+            addr = info[4][0]
+            ip = ipaddress.ip_address(addr)
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_reserved
+                or ip.is_multicast
+                or ip.is_unspecified
+            ):
+                return True
+    except socket.gaierror:
+        return True
+    return False
+
+
+def _validate_public_http_url(url: str) -> str | None:
+    """
+    Normalize and validate a user-supplied http(s) URL for server-side fetch.
+    Returns an error message, or None if OK.
+    """
+    if not url or len(url) > 2048:
+        return "Invalid URL."
+    parsed = urlparse(url.strip())
+    if parsed.scheme not in ("http", "https"):
+        return "Only http and https URLs are allowed."
+    if not parsed.hostname:
+        return "Invalid URL."
+    if parsed.username or parsed.password:
+        return "URLs with credentials are not allowed."
+    if _is_blocked_ip(parsed.hostname):
+        return "That host is not allowed."
+    return None
+
+
+def _normalize_video_quality(quality) -> str | None:
+    """Allow only 'best' or a positive integer height."""
+    if quality is None or quality == "" or quality == "best":
+        return "best"
+    try:
+        height = int(quality)
+    except (TypeError, ValueError):
+        return None
+    if height < 144 or height > 4320:
+        return None
+    return str(height)
+
+
+def _public_task_view(task: dict) -> dict:
+    """Strip internal fields (local paths) from download task responses."""
+    return {
+        "state": task.get("state"),
+        "progress": task.get("progress"),
+        "status_text": task.get("status_text"),
+        "error": task.get("error"),
+        "filename": task.get("filename"),
+    }
+
+
 def _send_otp_telegram(username: str, code: str) -> bool:
     """Send an OTP code to a user via CallMeBot Telegram."""
     text = f"Your WebTools.wiki login code: {code}\n\nThis code expires in 5 minutes."
@@ -267,6 +376,33 @@ def _send_otp_telegram(username: str, code: str) -> bool:
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/robots.txt")
+def robots_txt():
+    body = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Disallow: /price-tracker/admin\n"
+        "Disallow: /api/\n"
+        "Sitemap: https://webtools.wiki/sitemap.xml\n"
+    )
+    return app.response_class(body, mimetype="text/plain")
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    urls = ["/", "/video-downloader", "/paywall-remover", "/price-tracker"]
+    items = "\n".join(
+        f"  <url><loc>https://webtools.wiki{u}</loc></url>" for u in urls
+    )
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"{items}\n"
+        "</urlset>\n"
+    )
+    return app.response_class(body, mimetype="application/xml")
 
 
 @app.route("/video-downloader")
@@ -432,14 +568,23 @@ def auth_me():
 # API – Video Downloader
 # ---------------------------------------------------------------------------
 
+def _yt_dlp_cmd(*args: str) -> list[str]:
+    """Prefer PATH binary; fall back to python -m yt_dlp."""
+    import shutil
+    import sys
+
+    if shutil.which("yt-dlp"):
+        return ["yt-dlp", *args]
+    return [sys.executable, "-m", "yt_dlp", *args]
+
+
 def _run_download(task_id: str, url: str, quality: str):
     """Background worker that drives yt-dlp and updates task state."""
     try:
         fmt = "best" if quality == "best" else f"bestvideo[height<={quality}]+bestaudio/best[height<={quality}]"
         output_template = os.path.join(DOWNLOAD_DIR, f"{task_id}_%(title)s.%(ext)s")
 
-        cmd = [
-            "yt-dlp",
+        cmd = _yt_dlp_cmd(
             "--no-playlist",
             "-f", fmt,
             "--merge-output-format", "mp4",
@@ -447,7 +592,7 @@ def _run_download(task_id: str, url: str, quality: str):
             "--newline",
             "--progress",
             url,
-        ]
+        )
 
         proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
@@ -467,7 +612,7 @@ def _run_download(task_id: str, url: str, quality: str):
         if proc.returncode != 0:
             with task_lock:
                 download_tasks[task_id]["state"] = "error"
-                download_tasks[task_id]["error"] = "yt-dlp exited with an error. The URL may be unsupported."
+                download_tasks[task_id]["error"] = "Download failed. The URL may be unsupported."
             return
 
         # Find the downloaded file
@@ -484,10 +629,15 @@ def _run_download(task_id: str, url: str, quality: str):
             download_tasks[task_id]["state"] = "error"
             download_tasks[task_id]["error"] = "Download completed but file not found."
 
-    except Exception as exc:
+    except FileNotFoundError:
         with task_lock:
             download_tasks[task_id]["state"] = "error"
-            download_tasks[task_id]["error"] = str(exc)
+            download_tasks[task_id]["error"] = "Video downloader is not configured on this server."
+    except Exception:
+        logger.exception("Video download failed for task %s", task_id)
+        with task_lock:
+            download_tasks[task_id]["state"] = "error"
+            download_tasks[task_id]["error"] = "Download failed. Please try again later."
 
 
 @app.route("/api/video/info", methods=["POST"])
@@ -497,9 +647,12 @@ def video_info():
     url = data.get("url", "").strip()
     if not url:
         return jsonify({"error": "URL is required"}), 400
+    bad = _validate_public_http_url(url)
+    if bad:
+        return jsonify({"error": bad}), 400
 
     try:
-        cmd = ["yt-dlp", "--dump-json", "--no-playlist", url]
+        cmd = _yt_dlp_cmd("--dump-json", "--no-playlist", url)
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if result.returncode != 0:
             return jsonify({"error": "Could not fetch video info. Check the URL."}), 400
@@ -520,10 +673,13 @@ def video_info():
             "duration": info.get("duration"),
             "qualities": quality_options,
         })
+    except FileNotFoundError:
+        return jsonify({"error": "Video downloader is not configured on this server."}), 503
     except subprocess.TimeoutExpired:
         return jsonify({"error": "Request timed out."}), 504
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+    except Exception:
+        logger.exception("video_info failed")
+        return jsonify({"error": "Could not fetch video info. Please try again."}), 500
 
 
 @app.route("/api/video/download", methods=["POST"])
@@ -531,10 +687,15 @@ def video_download_start():
     """Start an async download and return a task ID."""
     data = request.get_json(force=True)
     url = data.get("url", "").strip()
-    quality = data.get("quality", "best")
+    quality = _normalize_video_quality(data.get("quality", "best"))
 
     if not url:
         return jsonify({"error": "URL is required"}), 400
+    bad = _validate_public_http_url(url)
+    if bad:
+        return jsonify({"error": bad}), 400
+    if quality is None:
+        return jsonify({"error": "Invalid quality."}), 400
 
     task_id = uuid.uuid4().hex[:12]
     with task_lock:
@@ -559,7 +720,7 @@ def video_progress(task_id: str):
         task = download_tasks.get(task_id)
     if not task:
         return jsonify({"error": "Unknown task"}), 404
-    return jsonify(task)
+    return jsonify(_public_task_view(task))
 
 
 @app.route("/api/video/file/<task_id>")
@@ -960,6 +1121,9 @@ def paywall_read():
     url = data.get("url", "").strip()
     if not url:
         return jsonify({"error": "URL is required"}), 400
+    bad = _validate_public_http_url(url)
+    if bad:
+        return jsonify({"error": bad}), 400
 
     html = _fetch_article_html(url)
 
@@ -1289,11 +1453,9 @@ def test_notification():
 # ---------------------------------------------------------------------------
 
 @app.route("/api/price/status")
-@api_login_required
+@api_admin_required
 def price_tracker_status():
     """Overview of tracker health (admin only)."""
-    if not _is_admin():
-        return jsonify({"error": "Admin access required"}), 403
     conn = _get_db()
     total = conn.execute("SELECT COUNT(*) FROM tracked_products").fetchone()[0]
     notified = conn.execute("SELECT COUNT(*) FROM tracked_products WHERE notified = 1").fetchone()[0]
@@ -1333,7 +1495,7 @@ def price_tracker_status():
 
 
 @app.route("/api/price/admin/products")
-@api_login_required
+@api_admin_required
 def admin_products():
     """List all products with error info for admin view."""
     conn = _get_db()
@@ -1355,11 +1517,9 @@ def admin_products():
 
 
 @app.route("/api/price/admin/check-history")
-@api_login_required
+@api_admin_required
 def admin_check_history():
     """Recent check iterations across all products (admin only)."""
-    if not _is_admin():
-        return jsonify({"error": "Admin access required"}), 403
     limit = min(int(request.args.get("limit", 40)), 100)
     conn = _get_db()
     rows = conn.execute(
@@ -1376,7 +1536,7 @@ def admin_check_history():
 
 
 @app.route("/api/price/admin/cleanup", methods=["POST"])
-@api_login_required
+@api_admin_required
 def admin_cleanup():
     """Remove notified products older than N days."""
     data = request.get_json(force=True)
@@ -1396,7 +1556,7 @@ def admin_cleanup():
 
 
 @app.route("/api/price/admin/delete-erroring", methods=["POST"])
-@api_login_required
+@api_admin_required
 def admin_delete_erroring():
     """Remove products with 3+ consecutive scraping failures."""
     conn = _get_db()
@@ -1408,7 +1568,7 @@ def admin_delete_erroring():
 
 
 @app.route("/api/price/admin/delete-all-notified", methods=["POST"])
-@api_login_required
+@api_admin_required
 def admin_delete_all_notified():
     """Remove all notified products."""
     conn = _get_db()
@@ -1420,7 +1580,7 @@ def admin_delete_all_notified():
 
 
 @app.route("/api/price/admin/reset-errors/<product_id>", methods=["POST"])
-@api_login_required
+@api_admin_required
 def admin_reset_errors(product_id: str):
     """Reset error count for a product (retry scraping)."""
     conn = _get_db()
@@ -1434,11 +1594,9 @@ def admin_reset_errors(product_id: str):
 
 
 @app.route("/api/price/admin/users")
-@api_login_required
+@api_admin_required
 def admin_users():
     """List all registered users with their product counts."""
-    if not _is_admin():
-        return jsonify({"error": "Admin access required"}), 403
     conn = _get_db()
     users = conn.execute(
         """SELECT u.username, u.created_at, u.is_admin,
