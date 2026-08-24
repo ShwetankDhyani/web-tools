@@ -39,6 +39,28 @@ from security_utils import (
     validate_resolved_url,
 )
 
+
+def _load_dotenv(path: str) -> None:
+    """Load KEY=VALUE pairs into os.environ without overriding existing vars."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for raw in fh:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key:
+                    os.environ.setdefault(key, value)
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        logger.warning("Could not read %s: %s", path, exc)
+
+
+_load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+
 app = Flask(__name__)
 _secret = os.environ.get("FLASK_SECRET_KEY")
 if not _secret:
