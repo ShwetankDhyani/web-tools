@@ -39,7 +39,7 @@ Use **Gunicorn on port 8000** (nginx should `proxy_pass` to the same port). Pref
 export FLASK_SECRET_KEY="…"
 export FLASK_SESSION_SECURE=1
 export ADMIN_USERNAME="your_telegram"
-gunicorn app:app --bind 127.0.0.1:8000 --workers 1 --threads 8 --timeout 120
+gunicorn app:app --bind 127.0.0.1:5000 --workers 1 --threads 8 --timeout 120
 ```
 
 Systemd unit example: `deploy/webtools.service` (edit paths/user/secrets), then:
@@ -48,7 +48,7 @@ Systemd unit example: `deploy/webtools.service` (edit paths/user/secrets), then:
 sudo cp deploy/webtools.service /etc/systemd/system/webtools.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now webtools
-curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5000/
 ```
 
 Nginx snippet with security headers: `deploy/nginx-snippet.conf`.
@@ -57,7 +57,7 @@ Nginx snippet with security headers: `deploy/nginx-snippet.conf`.
 
 ```bash
 sudo grep proxy_pass /etc/nginx/sites-enabled/*
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:5000/
 journalctl -u webtools -n 20 --no-pager
 ```
 

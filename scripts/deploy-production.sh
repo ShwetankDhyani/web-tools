@@ -5,6 +5,9 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-$HOME/web-tools}"
 BRANCH="${BRANCH:-devin/initial-push}"
 SERVICE="${SERVICE:-webtools}"
+# nginx on toolkit currently proxies to :5000 (see sites-enabled proxy_pass)
+BIND_ADDR="${BIND_ADDR:-127.0.0.1:5000}"
+
 
 cd "$APP_DIR"
 
@@ -90,21 +93,21 @@ restart_app() {
     sleep 3
   fi
 
-  if curl -sf -o /dev/null http://127.0.0.1:8000/; then
-    echo "==> Service is responding on :8000"
+  if curl -sf -o /dev/null http://"${BIND_ADDR}"/; then
+    echo "==> Service is responding on ${BIND_ADDR}"
     return 0
   fi
 
-  echo "==> Starting gunicorn directly on :8000"
+  echo "==> Starting gunicorn directly on ${BIND_ADDR}"
   # Load .env into this shell for the child process
   set -a
   # shellcheck disable=SC1090
   [[ -f "$ENV_FILE" ]] && . "$ENV_FILE"
   set +a
-  nohup "$GUNICORN" app:app --bind 127.0.0.1:8000 --workers 1 --threads 8 --timeout 120 \
+  nohup "$GUNICORN" app:app --bind "${BIND_ADDR}" --workers 1 --threads 8 --timeout 120 \
     >>"$APP_DIR/gunicorn.log" 2>&1 &
   sleep 2
-  curl -sf -o /dev/null http://127.0.0.1:8000/ && echo "==> Manual gunicorn is up"
+  curl -sf -o /dev/null http://"${BIND_ADDR}"/ && echo "==> Manual gunicorn is up"
 }
 
 if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
@@ -119,7 +122,7 @@ EnvironmentFile=-${ENV_FILE}
 Environment=PATH=${APP_DIR}/venv/bin:/usr/local/bin:/usr/bin
 WorkingDirectory=${APP_DIR}
 ExecStart=
-ExecStart=${GUNICORN} app:app --bind 127.0.0.1:8000 --workers 1 --threads 8 --timeout 120
+ExecStart=${GUNICORN} app:app --bind "${BIND_ADDR}" --workers 1 --threads 8 --timeout 120
 OV
   sudo systemctl daemon-reload
   sudo systemctl restart "$SERVICE"
@@ -132,9 +135,9 @@ else
 fi
 
 echo "==> Smoke checks"
-curl -s -o /dev/null -w "home %{http_code}\n" http://127.0.0.1:8000/ || true
-curl -s -o /dev/null -w "robots %{http_code}\n" http://127.0.0.1:8000/robots.txt || true
-curl -s -o /dev/null -w "privacy %{http_code}\n" http://127.0.0.1:8000/privacy || true
+curl -s -o /dev/null -w "home %{http_code}\n" http://"${BIND_ADDR}"/ || true
+curl -s -o /dev/null -w "robots %{http_code}\n" http://"${BIND_ADDR}"/robots.txt || true
+curl -s -o /dev/null -w "privacy %{http_code}\n" http://"${BIND_ADDR}"/privacy || true
 curl -s -o /dev/null -w "public %{http_code}\n" https://webtools.wiki/ || true
 echo -n "headers "
 curl -sI https://webtools.wiki/ | tr -d '\r' | rg -i '^(HTTP/|x-frame|content-security|x-content)' || true
