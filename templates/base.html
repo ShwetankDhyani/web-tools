@@ -4,6 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0b0d11" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="WebTools" />
+  <meta name="application-name" content="WebTools" />
   <meta name="description" content="{% block meta_description %}WebTools.wiki — free video downloads, paywall-free reading, and Telegram price alerts.{% endblock %}" />
   <meta name="robots" content="{% block meta_robots %}index,follow{% endblock %}" />
   <link rel="canonical" href="{% block canonical %}https://webtools.wiki{{ request.path }}{% endblock %}" />
@@ -19,8 +24,9 @@
   <meta name="twitter:description" content="{% block twitter_description %}Free everyday web utilities — video, paywall reader, and Telegram price alerts.{% endblock %}" />
 
   <title>{% block title %}WebTools.wiki{% endblock %}</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="/static/favicon.svg" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
   <link rel="stylesheet" href="/static/css/style.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -28,6 +34,16 @@
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
+  <div id="installBanner" class="install-banner hidden" role="region" aria-label="Install app">
+    <div class="install-banner-copy">
+      <strong>Install WebTools</strong>
+      <span>Add to your home screen — then share links straight into Video, Paywall, or Prices.</span>
+    </div>
+    <div class="install-banner-actions">
+      <button type="button" class="btn-primary" id="installAppBtn">Install</button>
+      <button type="button" class="btn-text" id="installDismissBtn" aria-label="Dismiss">Not now</button>
+    </div>
+  </div>
   <nav class="navbar" aria-label="Primary">
     <a href="/" class="nav-brand">
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
@@ -70,7 +86,7 @@
         <a href="https://github.com/ShwetankDhyani/web-tools" rel="noopener noreferrer" target="_blank">GitHub</a>
       </nav>
     </div>
-    <p class="footer-note">Price Tracker uses Telegram for login and alerts. Other tools work without an account.</p>
+    <p class="footer-note">Install the app on your phone to share links into WebTools from any app. Price Tracker uses Telegram for login and alerts.</p>
   </footer>
 
   <script src="/static/js/site.js"></script>

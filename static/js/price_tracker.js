@@ -431,3 +431,17 @@ function showError(msg) {
 function hideError() {
   document.getElementById("errorSection").classList.add("hidden");
 }
+
+// Prefill from ?url= when opened via PWA share / deep link
+(function prefillSharedProductUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const shared = (params.get("url") || "").trim();
+    const input = document.getElementById("productUrl");
+    if (shared && input) {
+      input.value = shared;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.focus();
+    }
+  } catch (_) {}
+})();

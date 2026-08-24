@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Open shared link – WebTools.wiki{% endblock %}
+{% block meta_robots %}noindex{% endblock %}
+
+{% block content %}
+<section class="tool-page share-page">
+  <header class="tool-header">
+    <div>
+      <h1>Open with WebTools</h1>
+      <p class="tool-desc">Choose how to handle this shared link.</p>
+    </div>
+  </header>
+
+  {% if shared_url %}
+  <div class="panel share-url-panel">
+    <p class="share-label">Shared link</p>
+    <p class="share-url" id="sharedUrlText">{{ shared_url }}</p>
+  </div>
+
+  <div class="share-actions">
+    <a class="btn-primary share-action" href="/video-downloader?url={{ shared_url|urlencode }}">Download video</a>
+    <a class="btn-primary share-action share-action-secondary" href="/paywall-remover?url={{ shared_url|urlencode }}">Read without paywall</a>
+    <a class="btn-primary share-action share-action-secondary" href="/price-tracker?url={{ shared_url|urlencode }}">Track price</a>
+  </div>
+  {% else %}
+  <div class="panel">
+    <p>No link was found in that share. Paste a URL into Video, Paywall, or Price Tracker instead.</p>
+    <p class="share-home-links">
+      <a href="/video-downloader">Video</a> ·
+      <a href="/paywall-remover">Paywall</a> ·
+      <a href="/price-tracker">Prices</a>
+    </p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

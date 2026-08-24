@@ -166,4 +166,14 @@
   urlInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") fetchBtn.click();
   });
+
+  // Prefill from ?url= (PWA share target / deep links)
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const shared = (params.get("url") || "").trim();
+    if (shared) {
+      urlInput.value = shared;
+      fetchBtn.click();
+    }
+  } catch (_) {}
 })();

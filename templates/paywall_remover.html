@@ -153,6 +153,15 @@
   urlInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") readBtn.click();
   });
+
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const shared = (params.get("url") || "").trim();
+    if (shared) {
+      urlInput.value = shared;
+      readBtn.click();
+    }
+  } catch (_) {}
 })();
 </script>
 {% endblock %}

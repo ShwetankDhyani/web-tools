@@ -423,6 +423,98 @@ def favicon_svg():
     return app.send_static_file("favicon.svg")
 
 
+@app.route("/manifest.webmanifest")
+def web_manifest():
+    return send_file(
+        os.path.join(app.static_folder, "manifest.webmanifest"),
+        mimetype="application/manifest+json",
+    )
+
+
+@app.route("/sw.js")
+def service_worker():
+    response = send_file(
+        os.path.join(app.static_folder, "sw.js"),
+        mimetype="application/javascript",
+    )
+    # Allow controlling the whole origin from /sw.js
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+_VIDEO_HOST_HINTS = (
+    "youtube.com", "youtu.be", "vimeo.com", "tiktok.com", "twitter.com", "x.com",
+    "reddit.com", "instagram.com", "facebook.com", "fb.watch", "twitch.tv",
+    "dailymotion.com", "streamable.com", "bilibili.com",
+)
+_PRODUCT_HOST_HINTS = (
+    "amazon.", "amzn.", "a.co", "flipkart.", "dl.flipkart", "ebay.", "walmart.",
+    "bestbuy.", "target.", "etsy.", "shopify", "myntra.", "ajio.",
+)
+
+
+def _extract_shared_url(url: str = "", text: str = "", title: str = "") -> str:
+    """Pull the first http(s) URL from share-target fields."""
+    candidates = [url or "", text or "", title or ""]
+    for raw in candidates:
+        raw = (raw or "").strip()
+        if raw.startswith(("http://", "https://")) and " " not in raw:
+            return raw
+        match = re.search(r"https?://[^\s<>\"']+", raw)
+        if match:
+            return match.group(0).rstrip(").,;]")
+    return ""
+
+
+def _classify_shared_url(shared: str) -> str:
+    """Return video | paywall | price | choose."""
+    try:
+        host = (urlparse(shared).hostname or "").lower()
+    except Exception:
+        return "choose"
+    if any(h in host for h in _VIDEO_HOST_HINTS):
+        return "video"
+    if any(h in host for h in _PRODUCT_HOST_HINTS):
+        return "price"
+    # Default articles / unknown → paywall reader is the safest single action;
+    # still offer a chooser when confidence is low for ambiguous hosts.
+    if host.endswith((".com", ".org", ".net", ".io", ".co", ".in", ".uk")) and not any(
+        x in host for x in ("google.", "maps.", "docs.", "drive.")
+    ):
+        return "paywall"
+    return "choose"
+
+
+@app.route("/share", methods=["GET", "POST"])
+def share_target():
+    """
+    Web Share Target endpoint.
+    Android/Chrome installed PWAs receive shared links here from the system share sheet.
+    """
+    if request.method == "POST":
+        url = request.form.get("url", "")
+        text = request.form.get("text", "")
+        title = request.form.get("title", "")
+    else:
+        url = request.args.get("url", "")
+        text = request.args.get("text", "")
+        title = request.args.get("title", "")
+
+    shared = _extract_shared_url(url, text, title)
+    if not shared:
+        return render_template("share.html", shared_url="")
+
+    kind = _classify_shared_url(shared)
+    if kind == "video":
+        return redirect(url_for("video_downloader_page", url=shared))
+    if kind == "price":
+        return redirect(url_for("price_tracker_page", url=shared))
+    if kind == "paywall":
+        return redirect(url_for("paywall_remover_page", url=shared))
+    return render_template("share.html", shared_url=shared)
+
+
 @app.route("/video-downloader")
 def video_downloader_page():
     return render_template("video_downloader.html")
