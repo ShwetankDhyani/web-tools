@@ -58,7 +58,7 @@ if ! "$PIP" install --only-binary=:all: -r requirements.txt; then
   echo "==> Binary-only install failed; retrying with source builds allowed"
   "$PIP" install -r requirements.txt
 fi
-"$PIP" install -U "yt-dlp==2025.4.30" || "$PIP" install -U yt-dlp
+"$PIP" install -U yt-dlp
 
 # Ensure yt-dlp is callable on PATH for the service user
 mkdir -p "$HOME/.local/bin"
