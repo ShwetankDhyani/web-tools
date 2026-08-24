@@ -13,11 +13,35 @@ git fetch origin
 git checkout "$BRANCH"
 git pull --ff-only origin "$BRANCH"
 
-# Always use a project venv (PEP 668 blocks system pip on modern Debian/Ubuntu).
-if [[ ! -d venv ]]; then
-  echo "==> Creating venv"
-  python3 -m venv venv
+# Prefer 3.12/3.13 when present — brand-new CPython sometimes lacks wheels.
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [[ -z "$PYTHON_BIN" ]]; then
+  for candidate in python3.12 python3.13 python3; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      PYTHON_BIN="$(command -v "$candidate")"
+      break
+    fi
+  done
 fi
+echo "==> Using Python: $PYTHON_BIN ($("$PYTHON_BIN" -V 2>&1))"
+
+# Recreate venv if missing or built for a different interpreter major.minor
+NEED_VENV=0
+if [[ ! -x venv/bin/python ]]; then
+  NEED_VENV=1
+else
+  CUR="$("$APP_DIR/venv/bin/python" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
+  WANT="$("$PYTHON_BIN" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
+  if [[ "$CUR" != "$WANT" ]]; then
+    echo "==> Recreating venv ($CUR -> $WANT)"
+    NEED_VENV=1
+  fi
+fi
+if [[ "$NEED_VENV" -eq 1 ]]; then
+  rm -rf venv
+  "$PYTHON_BIN" -m venv venv
+fi
+
 # shellcheck disable=SC1091
 source venv/bin/activate
 PIP="$APP_DIR/venv/bin/pip"
@@ -25,8 +49,12 @@ PY="$APP_DIR/venv/bin/python"
 GUNICORN="$APP_DIR/venv/bin/gunicorn"
 
 echo "==> Installing dependencies into venv"
-"$PIP" install --upgrade pip
-"$PIP" install -r requirements.txt
+"$PIP" install --upgrade pip wheel
+# Prefer binary wheels so lxml never compiles from source on the VPS
+if ! "$PIP" install --only-binary=:all: -r requirements.txt; then
+  echo "==> Binary-only install failed; retrying with source builds allowed"
+  "$PIP" install -r requirements.txt
+fi
 "$PIP" install -U "yt-dlp==2025.4.30" || "$PIP" install -U yt-dlp
 
 # Ensure yt-dlp is callable on PATH for the service user
@@ -45,7 +73,6 @@ if [[ ! -f "$ENV_FILE" ]] || ! grep -q '^FLASK_SECRET_KEY=' "$ENV_FILE" 2>/dev/n
   } >> "$ENV_FILE"
   echo "==> Wrote new FLASK_SECRET_KEY to $ENV_FILE"
 fi
-# Ensure secure cookies flag exists
 grep -q '^FLASK_SESSION_SECURE=' "$ENV_FILE" 2>/dev/null || echo "FLASK_SESSION_SECURE=1" >> "$ENV_FILE"
 
 if command -v systemctl >/dev/null 2>&1; then
