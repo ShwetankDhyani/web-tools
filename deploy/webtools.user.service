@@ -1,0 +1,15 @@
+[Unit]
+Description=WebTools.wiki (user gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/web-tools
+EnvironmentFile=-%h/web-tools/.env
+Environment=PATH=%h/web-tools/venv/bin:%h/.local/bin:/usr/bin
+ExecStart=%h/web-tools/venv/bin/gunicorn app:app --bind 127.0.0.1:5000 --workers 1 --threads 8 --timeout 120
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
