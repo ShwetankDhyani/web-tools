@@ -54,12 +54,19 @@ def _trim_url_token(url: str) -> str:
 
 def is_amazon_host(host: str) -> bool:
     host = host.lower().removeprefix("www.")
-    return "amazon" in host or host in AMAZON_SHORT_HOSTS
+    if host in AMAZON_SHORT_HOSTS:
+        return True
+    # amazon.com, amazon.in, amazon.co.uk, smile.amazon.com, etc.
+    parts = host.split(".")
+    return "amazon" in parts
 
 
 def is_flipkart_host(host: str) -> bool:
     host = host.lower().removeprefix("www.")
-    return "flipkart" in host or host in FLIPKART_SHORT_HOSTS
+    if host in FLIPKART_SHORT_HOSTS:
+        return True
+    parts = host.split(".")
+    return "flipkart" in parts
 
 
 def canonicalize_product_url(url: str) -> str:
@@ -74,7 +81,7 @@ def canonicalize_product_url(url: str) -> str:
         match = _ASIN_RE.search(path)
         if match:
             asin = match.group(1).upper()
-            if host == "amzn.in" or ".in" in host or "amazon.in" in host:
+            if host == "amzn.in" or host.endswith(".in") or host == "amazon.in" or host.endswith("amazon.in"):
                 base = "https://www.amazon.in"
             elif host in ("a.co", "amzn.to") or host.endswith(".com"):
                 base = "https://www.amazon.com"
@@ -336,13 +343,14 @@ def currency_from_text(text: str) -> str | None:
 
 def currency_from_url(url: str) -> str:
     """Default currency from store domain."""
-    domain = urlparse(url).netloc.lower()
-    if is_amazon_host(domain) and (domain == "amzn.in" or ".in" in domain or "amazon.in" in domain):
+    domain = urlparse(url).netloc.lower().removeprefix("www.")
+    labels = domain.split(".")
+    if domain == "amzn.in" or domain.endswith(".in") or domain == "amazon.in":
+        return "₹"
+    if "flipkart" in labels or "desidime" in labels:
         return "₹"
     if domain in ("a.co", "amzn.to") or domain.endswith("amazon.com"):
         return "$"
-    if ".in" in domain or "amazon.in" in domain or "flipkart" in domain or "desidime" in domain:
-        return "₹"
     if domain.endswith(".co.uk") or domain.endswith(".uk"):
         return "£"
     if any(domain.endswith(s) for s in (".eu", ".de", ".fr", ".it", ".es")):
@@ -420,7 +428,7 @@ def _parse_amazon(soup: BeautifulSoup, url: str = "") -> tuple[str | None, float
     price = None
     currency = None
     domain = urlparse(url).netloc.lower() if url else ""
-    india = ".in" in domain or "amazon.in" in domain
+    india = domain.endswith(".in") or domain.endswith("amazon.in") or "flipkart" in domain.split(".")
 
     title_el = soup.find("span", id="productTitle")
     if title_el:

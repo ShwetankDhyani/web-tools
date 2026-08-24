@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="WebTools.wiki">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#13161d"/>
+      <stop offset="100%" stop-color="#0b0d11"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#g)"/>
+  <circle cx="980" cy="90" r="220" fill="#6c5ce7" opacity="0.18"/>
+  <circle cx="180" cy="520" r="260" fill="#00cec9" opacity="0.12"/>
+  <text x="80" y="280" fill="#e4e6eb" font-family="Arial, sans-serif" font-size="72" font-weight="700">WebTools.wiki</text>
+  <text x="80" y="360" fill="#8b8f9a" font-family="Arial, sans-serif" font-size="36">Free video, paywall reader, and Telegram price alerts</text>
+</svg>

@@ -7,3 +7,4 @@ lxml_html_clean==0.4.4
 readability-lxml==0.8.4.1
 gunicorn==23.0.0
 curl_cffi>=0.7.0
+bleach==6.2.0

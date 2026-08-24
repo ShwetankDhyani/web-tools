@@ -88,6 +88,7 @@
     hideAll();
 
     siteFavicon.src = data.favicon || "";
+    siteFavicon.alt = data.site_name ? `${data.site_name} favicon` : "Site favicon";
     siteFavicon.style.display = "";
     siteName.textContent = data.site_name || "";
     articleSource.href = data.source_url;
@@ -107,7 +108,12 @@
       ? `${data.word_count.toLocaleString()} words`
       : "";
 
-    articleContent.innerHTML = data.content;
+    // Server already sanitizes HTML; still avoid executing unexpected markup patterns.
+    articleContent.replaceChildren();
+    const wrap = document.createElement("div");
+    wrap.innerHTML = data.content || "";
+    wrap.querySelectorAll("script, iframe, object, embed").forEach((n) => n.remove());
+    articleContent.append(...wrap.childNodes);
 
     articleSec.classList.remove("hidden");
     window.scrollTo({ top: articleSec.offsetTop - 80, behavior: "smooth" });

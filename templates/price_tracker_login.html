@@ -148,8 +148,15 @@ function backToStep1() {
 
 function showLoginError(msg, activateUrl) {
   const el = document.getElementById("loginError");
-  const url = activateUrl || ACTIVATE_URL;
-  el.innerHTML = `${msg} <a href="${url}" target="_blank" rel="noopener" class="link-telegram">Open Telegram &amp; send /start</a>`;
+  el.replaceChildren();
+  el.append(document.createTextNode(msg + " "));
+  const a = document.createElement("a");
+  a.href = activateUrl || ACTIVATE_URL;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.className = "link-telegram";
+  a.textContent = "Open Telegram & send /start";
+  el.append(a);
   el.classList.remove("hidden");
 }
 

@@ -183,6 +183,15 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
+function escapeAttr(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function loadUsers() {
   fetch("/api/price/admin/users")
     .then(r => r.json())
@@ -265,31 +274,34 @@ function renderAdminRow(p) {
     : '<span class="no-errors">0</span>';
 
   const errorCell = p.error_count > 0
-    ? `<span class="error-count" title="${p.last_error || ''}">${p.error_count} streak</span>`
+    ? `<span class="error-count" title="${escapeAttr(p.last_error || '')}">${p.error_count} streak</span>`
     : '<span class="no-errors">0</span>';
 
-  const cur = p.currency || "₹";
+  const cur = escapeHtml(p.currency || "₹");
   const priceDisplay = p.current_price !== null ? `${cur}${p.current_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : "—";
   const lastChecked = p.last_checked ? timeAgo(new Date(p.last_checked)) : "Never";
-  const name = p.name || "Unknown";
-  const shortUrl = truncateUrl(p.url);
+  const name = escapeHtml(p.name || "Unknown");
+  const safeUrl = escapeAttr(p.url || "#");
+  const shortUrl = escapeHtml(truncateUrl(p.url || ""));
+  const safeId = escapeAttr(p.id || "");
+  const safeUser = escapeHtml(p.username || "—");
 
   return `
     <tr class="${p.error_count >= 3 ? 'row-error' : ''}">
       <td data-label="Product">
         <div class="admin-product-name">${name}</div>
-        <a href="${p.url}" target="_blank" rel="noopener" class="admin-product-url">${shortUrl}</a>
+        <a href="${safeUrl}" target="_blank" rel="noopener" class="admin-product-url">${shortUrl}</a>
       </td>
-      <td data-label="User">@${p.username || '—'}</td>
+      <td data-label="User">@${safeUser}</td>
       <td data-label="Price">${priceDisplay}</td>
-      <td data-label="Target">${cur}${p.target_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+      <td data-label="Target">${cur}${Number(p.target_price).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
       <td data-label="Status">${status}</td>
       <td data-label="Checks">${checksCell}</td>
       <td data-label="Errors">${errorCell}</td>
-      <td data-label="Last checked">${lastChecked}</td>
+      <td data-label="Last checked">${escapeHtml(lastChecked)}</td>
       <td class="action-cell" data-label="Actions">
-        ${p.error_count > 0 ? `<button class="btn-tiny" type="button" onclick="resetErrors('${p.id}')">Retry</button>` : ''}
-        <button class="btn-tiny btn-danger" type="button" onclick="deleteProduct('${p.id}')">Delete</button>
+        ${p.error_count > 0 ? `<button class="btn-tiny" type="button" onclick="resetErrors('${safeId}')">Retry</button>` : ''}
+        <button class="btn-tiny btn-danger" type="button" onclick="deleteProduct('${safeId}')">Delete</button>
       </td>
     </tr>
   `;

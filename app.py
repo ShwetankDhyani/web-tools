@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from urllib.parse import urlparse
 
@@ -30,6 +30,15 @@ from flask import (
 )
 from readability import Document
 
+from download_store import DownloadStore, public_task_view
+from security_utils import (
+    client_key,
+    rate_limit_exceeded,
+    sanitize_article_html,
+    validate_public_http_url,
+    validate_resolved_url,
+)
+
 app = Flask(__name__)
 _secret = os.environ.get("FLASK_SECRET_KEY")
 if not _secret:
@@ -45,6 +54,38 @@ app.config.update(
     # Enable in production: FLASK_SESSION_SECURE=1
     SESSION_COOKIE_SECURE=os.environ.get("FLASK_SESSION_SECURE", "0") == "1",
 )
+
+app.permanent_session_lifetime = timedelta(days=30)
+
+
+@app.after_request
+def _security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(), microphone=(), geolocation=(), payment=()",
+    )
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "img-src 'self' data: https:; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:; "
+        "script-src 'self' 'unsafe-inline'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'",
+    )
+    if request.is_secure or request.headers.get("X-Forwarded-Proto") == "https":
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
+    return response
+
 
 # CallMeBot — one-tap Telegram link (/start pre-filled for authorization)
 CALLMEBOT_BOT = "CallMeBot_txtbot"
@@ -71,10 +112,7 @@ def _telegram_activate_payload(extra: dict | None = None) -> dict:
 
 DOWNLOAD_DIR = os.path.join(tempfile.gettempdir(), "web_tools_downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-
-# In-memory store for download progress
-download_tasks: dict[str, dict] = {}
-task_lock = threading.Lock()
+download_store = DownloadStore(DOWNLOAD_DIR, ttl_sec=3600)
 
 # ---------------------------------------------------------------------------
 # Database – Price Tracker
@@ -84,9 +122,11 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "price_tracke
 
 
 def _get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
     return conn
 
 
@@ -265,66 +305,6 @@ def api_admin_required(f):
     return decorated
 
 
-def _is_blocked_ip(hostname: str) -> bool:
-    """Return True if hostname resolves to a non-public address."""
-    import ipaddress
-    import socket
-
-    if not hostname:
-        return True
-    host = hostname.strip("[]").lower()
-    if host in {"localhost", "metadata.google.internal"}:
-        return True
-    try:
-        # Literal IP
-        ip = ipaddress.ip_address(host)
-        return (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_multicast
-            or ip.is_unspecified
-        )
-    except ValueError:
-        pass
-    try:
-        for info in socket.getaddrinfo(host, None):
-            addr = info[4][0]
-            ip = ipaddress.ip_address(addr)
-            if (
-                ip.is_private
-                or ip.is_loopback
-                or ip.is_link_local
-                or ip.is_reserved
-                or ip.is_multicast
-                or ip.is_unspecified
-            ):
-                return True
-    except socket.gaierror:
-        return True
-    return False
-
-
-def _validate_public_http_url(url: str) -> str | None:
-    """
-    Normalize and validate a user-supplied http(s) URL for server-side fetch.
-    Returns an error message, or None if OK.
-    """
-    if not url or len(url) > 2048:
-        return "Invalid URL."
-    parsed = urlparse(url.strip())
-    if parsed.scheme not in ("http", "https"):
-        return "Only http and https URLs are allowed."
-    if not parsed.hostname:
-        return "Invalid URL."
-    if parsed.username or parsed.password:
-        return "URLs with credentials are not allowed."
-    if _is_blocked_ip(parsed.hostname):
-        return "That host is not allowed."
-    return None
-
-
 def _normalize_video_quality(quality) -> str | None:
     """Allow only 'best' or a positive integer height."""
     if quality is None or quality == "" or quality == "best":
@@ -338,15 +318,6 @@ def _normalize_video_quality(quality) -> str | None:
     return str(height)
 
 
-def _public_task_view(task: dict) -> dict:
-    """Strip internal fields (local paths) from download task responses."""
-    return {
-        "state": task.get("state"),
-        "progress": task.get("progress"),
-        "status_text": task.get("status_text"),
-        "error": task.get("error"),
-        "filename": task.get("filename"),
-    }
 
 
 def _send_otp_telegram(username: str, code: str) -> bool:
@@ -392,7 +363,7 @@ def robots_txt():
 
 @app.route("/sitemap.xml")
 def sitemap_xml():
-    urls = ["/", "/video-downloader", "/paywall-remover", "/price-tracker"]
+    urls = ["/", "/video-downloader", "/paywall-remover", "/price-tracker", "/privacy", "/terms", "/about"]
     items = "\n".join(
         f"  <url><loc>https://webtools.wiki{u}</loc></url>" for u in urls
     )
@@ -403,6 +374,31 @@ def sitemap_xml():
         "</urlset>\n"
     )
     return app.response_class(body, mimetype="application/xml")
+
+
+@app.route("/privacy")
+def privacy_page():
+    return render_template("privacy.html")
+
+
+@app.route("/terms")
+def terms_page():
+    return render_template("terms.html")
+
+
+@app.route("/about")
+def about_page():
+    return render_template("about.html")
+
+
+@app.route("/favicon.ico")
+def favicon():
+    return app.send_static_file("favicon.svg")
+
+
+@app.route("/favicon.svg")
+def favicon_svg():
+    return app.send_static_file("favicon.svg")
 
 
 @app.route("/video-downloader")
@@ -469,12 +465,16 @@ def price_tracker_login_page():
 @app.route("/api/auth/request-otp", methods=["POST"])
 def auth_request_otp():
     """Send a one-time login code via Telegram."""
-    data = request.get_json(force=True)
+    if rate_limit_exceeded(client_key(request.remote_addr, "otp-req"), limit=5, window_sec=600):
+        return jsonify({"error": "Too many login attempts. Try again in a few minutes."}), 429
+    data = request.get_json(force=True) or {}
     username = (data.get("username") or "").strip().lower().lstrip("@")
     if not username:
         return jsonify({"error": "Telegram username is required"}), 400
     if not re.match(r'^[a-z0-9_]{5,32}$', username):
         return jsonify({"error": "Invalid Telegram username"}), 400
+    if rate_limit_exceeded(client_key(username, "otp-req-user"), limit=3, window_sec=600):
+        return jsonify({"error": "Too many codes requested for this username. Try later."}), 429
 
     code = f"{random.randint(100000, 999999)}"
     now = datetime.now(timezone.utc).isoformat()
@@ -498,12 +498,16 @@ def auth_request_otp():
 @app.route("/api/auth/verify-otp", methods=["POST"])
 def auth_verify_otp():
     """Verify the OTP and create a session."""
-    data = request.get_json(force=True)
+    if rate_limit_exceeded(client_key(request.remote_addr, "otp-verify"), limit=12, window_sec=600):
+        return jsonify({"error": "Too many attempts. Request a new code later."}), 429
+    data = request.get_json(force=True) or {}
     username = (data.get("username") or "").strip().lower().lstrip("@")
     code = (data.get("code") or "").strip()
 
     if not username or not code:
         return jsonify({"error": "Username and code are required"}), 400
+    if rate_limit_exceeded(client_key(username, "otp-verify-user"), limit=8, window_sec=600):
+        return jsonify({"error": "Too many attempts for this username. Try later."}), 429
 
     conn = _get_db()
     row = conn.execute(
@@ -600,60 +604,73 @@ def _run_download(task_id: str, url: str, quality: str):
 
         for line in proc.stdout:  # type: ignore[union-attr]
             line = line.strip()
-            # Parse yt-dlp progress lines
             pct_match = re.search(r"(\d+(?:\.\d+)?)%", line)
             if pct_match:
-                with task_lock:
-                    download_tasks[task_id]["progress"] = float(pct_match.group(1))
-                    download_tasks[task_id]["status_text"] = line
+                download_store.update(
+                    task_id,
+                    progress=float(pct_match.group(1)),
+                    status_text=line[:200],
+                )
 
         proc.wait()
 
         if proc.returncode != 0:
-            with task_lock:
-                download_tasks[task_id]["state"] = "error"
-                download_tasks[task_id]["error"] = "Download failed. The URL may be unsupported."
+            download_store.update(
+                task_id,
+                state="error",
+                error="Download failed. The URL may be unsupported.",
+            )
             return
 
-        # Find the downloaded file
         for fname in os.listdir(DOWNLOAD_DIR):
-            if fname.startswith(task_id):
-                with task_lock:
-                    download_tasks[task_id]["state"] = "done"
-                    download_tasks[task_id]["progress"] = 100
-                    download_tasks[task_id]["file"] = os.path.join(DOWNLOAD_DIR, fname)
-                    download_tasks[task_id]["filename"] = fname[len(task_id) + 1:]
+            if fname.startswith(task_id) and not fname.endswith(".json"):
+                download_store.update(
+                    task_id,
+                    state="done",
+                    progress=100,
+                    file=os.path.join(DOWNLOAD_DIR, fname),
+                    filename=fname[len(task_id) + 1 :],
+                )
                 return
 
-        with task_lock:
-            download_tasks[task_id]["state"] = "error"
-            download_tasks[task_id]["error"] = "Download completed but file not found."
+        download_store.update(
+            task_id,
+            state="error",
+            error="Download completed but file not found.",
+        )
 
     except FileNotFoundError:
-        with task_lock:
-            download_tasks[task_id]["state"] = "error"
-            download_tasks[task_id]["error"] = "Video downloader is not configured on this server."
+        download_store.update(
+            task_id,
+            state="error",
+            error="Video downloader is not configured on this server.",
+        )
     except Exception:
         logger.exception("Video download failed for task %s", task_id)
-        with task_lock:
-            download_tasks[task_id]["state"] = "error"
-            download_tasks[task_id]["error"] = "Download failed. Please try again later."
+        download_store.update(
+            task_id,
+            state="error",
+            error="Download failed. Please try again later.",
+        )
 
 
 @app.route("/api/video/info", methods=["POST"])
 def video_info():
     """Return video metadata (title, thumbnail, formats) without downloading."""
-    data = request.get_json(force=True)
-    url = data.get("url", "").strip()
+    if rate_limit_exceeded(client_key(request.remote_addr, "video-info"), limit=20, window_sec=60):
+        return jsonify({"error": "Too many requests. Please wait a moment."}), 429
+    data = request.get_json(force=True) or {}
+    url = (data.get("url") or "").strip()
     if not url:
         return jsonify({"error": "URL is required"}), 400
-    bad = _validate_public_http_url(url)
+    bad = validate_public_http_url(url)
     if bad:
         return jsonify({"error": bad}), 400
 
     try:
+        download_store.cleanup()
         cmd = _yt_dlp_cmd("--dump-json", "--no-playlist", url)
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
         if result.returncode != 0:
             return jsonify({"error": "Could not fetch video info. Check the URL."}), 400
 
@@ -685,28 +702,29 @@ def video_info():
 @app.route("/api/video/download", methods=["POST"])
 def video_download_start():
     """Start an async download and return a task ID."""
-    data = request.get_json(force=True)
-    url = data.get("url", "").strip()
+    if rate_limit_exceeded(client_key(request.remote_addr, "video-dl"), limit=8, window_sec=60):
+        return jsonify({"error": "Too many downloads. Please wait a moment."}), 429
+    data = request.get_json(force=True) or {}
+    url = (data.get("url") or "").strip()
     quality = _normalize_video_quality(data.get("quality", "best"))
 
     if not url:
         return jsonify({"error": "URL is required"}), 400
-    bad = _validate_public_http_url(url)
+    bad = validate_public_http_url(url)
     if bad:
         return jsonify({"error": bad}), 400
     if quality is None:
         return jsonify({"error": "Invalid quality."}), 400
 
     task_id = uuid.uuid4().hex[:12]
-    with task_lock:
-        download_tasks[task_id] = {
-            "state": "downloading",
-            "progress": 0,
-            "status_text": "Starting download...",
-            "error": None,
-            "file": None,
-            "filename": None,
-        }
+    download_store.put(task_id, {
+        "state": "downloading",
+        "progress": 0,
+        "status_text": "Starting download...",
+        "error": None,
+        "file": None,
+        "filename": None,
+    })
 
     thread = threading.Thread(target=_run_download, args=(task_id, url, quality), daemon=True)
     thread.start()
@@ -716,24 +734,24 @@ def video_download_start():
 
 @app.route("/api/video/progress/<task_id>")
 def video_progress(task_id: str):
-    with task_lock:
-        task = download_tasks.get(task_id)
+    task = download_store.get(task_id)
     if not task:
         return jsonify({"error": "Unknown task"}), 404
-    return jsonify(_public_task_view(task))
+    return jsonify(public_task_view(task))
 
 
 @app.route("/api/video/file/<task_id>")
 def video_file(task_id: str):
-    with task_lock:
-        task = download_tasks.get(task_id)
-    if not task or task["state"] != "done":
+    task = download_store.get(task_id)
+    if not task or task.get("state") != "done" or not task.get("file"):
+        return jsonify({"error": "File not ready"}), 404
+    if not os.path.isfile(task["file"]):
         return jsonify({"error": "File not ready"}), 404
 
     return send_file(
         task["file"],
         as_attachment=True,
-        download_name=task["filename"],
+        download_name=task.get("filename") or "video.mp4",
     )
 
 
@@ -820,6 +838,10 @@ def _try_fetch(url: str, headers: dict) -> str | None:
     try:
         resp = cffi_requests.get(url, headers=headers, timeout=15,
                                  allow_redirects=True, impersonate="chrome")
+        final = str(getattr(resp, "url", url) or url)
+        if not validate_resolved_url(final):
+            logger.warning("Blocked redirect to unsafe host: %s", final[:120])
+            return None
         if resp.status_code == 200 and _has_article_content(resp.text):
             return resp.text
     except Exception:
@@ -1117,11 +1139,13 @@ def _fetch_article_html(url: str) -> str | None:
 
 @app.route("/api/paywall/read", methods=["POST"])
 def paywall_read():
-    data = request.get_json(force=True)
-    url = data.get("url", "").strip()
+    if rate_limit_exceeded(client_key(request.remote_addr, "paywall"), limit=15, window_sec=60):
+        return jsonify({"error": "Too many requests. Please wait a moment."}), 429
+    data = request.get_json(force=True) or {}
+    url = (data.get("url") or "").strip()
     if not url:
         return jsonify({"error": "URL is required"}), 400
-    bad = _validate_public_http_url(url)
+    bad = validate_public_http_url(url)
     if bad:
         return jsonify({"error": bad}), 400
 
@@ -1131,6 +1155,7 @@ def paywall_read():
         return jsonify({"error": "Could not fetch the article. The site may block all automated access."}), 502
 
     article = _clean_article(html, url)
+    article["content"] = sanitize_article_html(article.get("content") or "")
     return jsonify(article)
 
 
@@ -1207,6 +1232,9 @@ def price_track():
         return jsonify({"error": "Product URL is required"}), 400
     if not url.startswith(("http://", "https://")):
         return jsonify({"error": "Paste a valid product link (https://…)"}), 400
+    bad_url = validate_public_http_url(url)
+    if bad_url:
+        return jsonify({"error": bad_url}), 400
     if not target_price or float(target_price) <= 0:
         return jsonify({"error": "A valid target price is required"}), 400
 
@@ -1410,10 +1438,14 @@ def price_check_now(product_id: str):
     product["currency"] = currency
 
     notified = False
-    if new_price <= product["target_price"] and not product["notified"]:
-        if _send_telegram_alert(product, new_price):
-            conn.execute("UPDATE tracked_products SET notified = 1 WHERE id = ?", (product_id,))
-            notified = True
+    if new_price <= product["target_price"]:
+        if not product["notified"]:
+            if _send_telegram_alert(product, new_price):
+                conn.execute("UPDATE tracked_products SET notified = 1 WHERE id = ?", (product_id,))
+                notified = True
+    else:
+        if product["notified"]:
+            conn.execute("UPDATE tracked_products SET notified = 0 WHERE id = ?", (product_id,))
 
     conn.commit()
     conn.close()
@@ -1465,18 +1497,16 @@ def price_tracker_status():
     last_checked_row = conn.execute(
         "SELECT last_checked FROM tracked_products ORDER BY last_checked DESC LIMIT 1"
     ).fetchone()
-    check_total = conn.execute(
-        "SELECT COALESCE(SUM(check_count), 0) FROM tracked_products"
-    ).fetchone()[0]
     try:
         check_stats = conn.execute(
             """SELECT
+                 COUNT(*) AS total,
                  COALESCE(SUM(success), 0) AS successful,
                  COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS failed
                FROM check_runs"""
         ).fetchone()
     except sqlite3.OperationalError:
-        check_stats = {"successful": 0, "failed": 0}
+        check_stats = {"total": 0, "successful": 0, "failed": 0}
     conn.close()
 
     return jsonify({
@@ -1487,7 +1517,7 @@ def price_tracker_status():
         "total_users": user_count,
         "last_checked": last_checked_row["last_checked"] if last_checked_row else None,
         "check_runs": {
-            "total": check_total or 0,
+            "total": check_stats["total"] or 0,
             "successful": check_stats["successful"] or 0,
             "failed": check_stats["failed"] or 0,
         },

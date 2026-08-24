@@ -130,11 +130,13 @@ def _is_due(product: dict, now: datetime) -> bool:
 
 
 def check_all_prices():
-    """Check prices for due, un-notified tracked products, then exit."""
+    """Check prices for due tracked products, then exit.
+
+    Products stay monitored after an alert. If price rises above the target,
+    `notified` resets so a later drop can alert again.
+    """
     conn = _get_db()
-    products = conn.execute(
-        "SELECT * FROM tracked_products WHERE notified = 0"
-    ).fetchall()
+    products = conn.execute("SELECT * FROM tracked_products").fetchall()
     conn.close()
 
     if not products:
@@ -204,9 +206,18 @@ def check_all_prices():
 
         if new_price <= product["target_price"]:
             logger.info("Price %.2f is at or below target %.2f!", new_price, product["target_price"])
-            if _send_telegram_alert(product, new_price):
+            if not product.get("notified"):
+                if _send_telegram_alert(product, new_price):
+                    conn.execute(
+                        "UPDATE tracked_products SET notified = 1 WHERE id = ?",
+                        (product["id"],),
+                    )
+        else:
+            # Price recovered above target — allow a future drop to alert again
+            if product.get("notified"):
+                logger.info("Price recovered above target; resetting notified flag")
                 conn.execute(
-                    "UPDATE tracked_products SET notified = 1 WHERE id = ?",
+                    "UPDATE tracked_products SET notified = 0 WHERE id = ?",
                     (product["id"],),
                 )
 

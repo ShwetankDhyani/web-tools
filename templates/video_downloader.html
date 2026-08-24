@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Video Downloader – WebTools.wiki{% endblock %}
+{% block meta_description %}Download videos from YouTube, Vimeo, Twitter, Reddit, TikTok, and more. Free, no account.{% endblock %}
+{% block og_title %}Video Downloader – WebTools.wiki{% endblock %}
 
 {% block content %}
 <section class="tool-page">
@@ -16,39 +18,46 @@
 
   <div class="input-group panel">
     <label class="sr-only" for="videoUrl">Video URL</label>
-    <input type="url" id="videoUrl" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" />
-    <button id="fetchInfoBtn" class="btn-primary">Fetch video</button>
+    <input type="url" id="videoUrl" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" inputmode="url" />
+    <button id="fetchInfoBtn" class="btn-primary" type="button">Fetch video</button>
   </div>
 
-  <div id="videoInfo" class="video-info panel hidden">
-    <img id="videoThumb" src="" alt="" class="video-thumb" />
-    <div class="video-meta">
-      <h2 id="videoTitle" class="panel-title"></h2>
-      <p id="videoDuration" class="meta-line"></p>
-      <div class="quality-select">
-        <label for="qualitySelect">Quality</label>
-        <select id="qualitySelect">
-          <option value="best">Best available</option>
-        </select>
+  <div id="loadingSection" class="video-loading panel hidden" aria-live="polite">
+    <div class="pw-spinner" aria-hidden="true"></div>
+    <p>Fetching video details…</p>
+  </div>
+
+  <div class="tool-workspace">
+    <div id="videoInfo" class="video-info panel hidden">
+      <img id="videoThumb" src="" alt="Video thumbnail" class="video-thumb" />
+      <div class="video-meta">
+        <h2 id="videoTitle" class="panel-title"></h2>
+        <p id="videoDuration" class="meta-line"></p>
+        <div class="quality-select">
+          <label for="qualitySelect">Quality</label>
+          <select id="qualitySelect">
+            <option value="best">Best available</option>
+          </select>
+        </div>
+        <button id="downloadBtn" class="btn-primary" type="button">Download</button>
       </div>
-      <button id="downloadBtn" class="btn-primary">Download</button>
     </div>
-  </div>
 
-  <div id="progressSection" class="progress-section panel hidden">
-    <div class="progress-bar-container">
-      <div id="progressBar" class="progress-bar" style="width:0%"></div>
+    <div id="progressSection" class="progress-section panel hidden">
+      <div class="progress-bar-container" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressBarWrap">
+        <div id="progressBar" class="progress-bar" style="width:0%"></div>
+      </div>
+      <p id="progressText">Starting download…</p>
     </div>
-    <p id="progressText">Starting download…</p>
-  </div>
 
-  <div id="doneSection" class="done-section panel hidden">
-    <p>Your file is ready.</p>
-    <a id="downloadLink" class="btn-primary" href="#" download>Save to device</a>
-  </div>
+    <div id="doneSection" class="done-section panel hidden">
+      <p>Your file is ready.</p>
+      <a id="downloadLink" class="btn-primary" href="#" download>Save to device</a>
+    </div>
 
-  <div id="errorSection" class="error-section hidden">
-    <p id="errorText"></p>
+    <div id="errorSection" class="error-section hidden" role="alert">
+      <p id="errorText"></p>
+    </div>
   </div>
 </section>
 {% endblock %}

@@ -1,23 +1,26 @@
 (() => {
   const $ = (sel) => document.querySelector(sel);
 
-  const urlInput     = $("#videoUrl");
-  const fetchBtn     = $("#fetchInfoBtn");
-  const infoPanel    = $("#videoInfo");
-  const thumbImg     = $("#videoThumb");
-  const titleEl      = $("#videoTitle");
-  const durationEl   = $("#videoDuration");
+  const urlInput = $("#videoUrl");
+  const fetchBtn = $("#fetchInfoBtn");
+  const loadingSec = $("#loadingSection");
+  const infoPanel = $("#videoInfo");
+  const thumbImg = $("#videoThumb");
+  const titleEl = $("#videoTitle");
+  const durationEl = $("#videoDuration");
   const qualitySelect = $("#qualitySelect");
-  const downloadBtn  = $("#downloadBtn");
-  const progressSec  = $("#progressSection");
-  const progressBar  = $("#progressBar");
+  const downloadBtn = $("#downloadBtn");
+  const progressSec = $("#progressSection");
+  const progressBar = $("#progressBar");
+  const progressWrap = $("#progressBarWrap");
   const progressText = $("#progressText");
-  const doneSec      = $("#doneSection");
+  const doneSec = $("#doneSection");
   const downloadLink = $("#downloadLink");
-  const errorSec     = $("#errorSection");
-  const errorText    = $("#errorText");
+  const errorSec = $("#errorSection");
+  const errorText = $("#errorText");
 
   function hideAll() {
+    if (loadingSec) loadingSec.classList.add("hidden");
     infoPanel.classList.add("hidden");
     progressSec.classList.add("hidden");
     doneSec.classList.add("hidden");
@@ -37,14 +40,25 @@
     return `${m}:${sec.toString().padStart(2, "0")}`;
   }
 
-  // ---- Fetch video info ----
+  function setProgress(pct, label) {
+    const value = Math.max(0, Math.min(100, Number(pct) || 0));
+    progressBar.style.width = value + "%";
+    if (progressWrap) progressWrap.setAttribute("aria-valuenow", String(Math.round(value)));
+    progressText.textContent = label || `${Math.round(value)}%`;
+  }
+
   fetchBtn.addEventListener("click", async () => {
     const url = urlInput.value.trim();
-    if (!url) return;
+    if (!url) {
+      showError("Paste a video URL first.");
+      urlInput.focus();
+      return;
+    }
 
     hideAll();
+    if (loadingSec) loadingSec.classList.remove("hidden");
     fetchBtn.disabled = true;
-    fetchBtn.textContent = "Fetching...";
+    fetchBtn.textContent = "Fetching…";
 
     try {
       const res = await fetch("/api/video/info", {
@@ -55,17 +69,18 @@
       const data = await res.json();
 
       if (!res.ok) {
-        showError(data.error || "Unknown error");
+        showError(data.error || "Could not fetch this video.");
         return;
       }
 
+      hideAll();
       titleEl.textContent = data.title;
       thumbImg.src = data.thumbnail || "";
+      thumbImg.alt = data.title ? `Thumbnail for ${data.title}` : "Video thumbnail";
       thumbImg.style.display = data.thumbnail ? "block" : "none";
       durationEl.textContent = data.duration ? `Duration: ${fmtDuration(data.duration)}` : "";
 
-      // Populate quality options
-      qualitySelect.innerHTML = '<option value="best">Best Available</option>';
+      qualitySelect.innerHTML = '<option value="best">Best available</option>';
       (data.qualities || []).forEach((q) => {
         const opt = document.createElement("option");
         opt.value = q;
@@ -74,15 +89,14 @@
       });
 
       infoPanel.classList.remove("hidden");
-    } catch (err) {
+    } catch {
       showError("Network error. Please try again.");
     } finally {
       fetchBtn.disabled = false;
-      fetchBtn.textContent = "Fetch Video";
+      fetchBtn.textContent = "Fetch video";
     }
   });
 
-  // ---- Start download ----
   downloadBtn.addEventListener("click", async () => {
     const url = urlInput.value.trim();
     if (!url) return;
@@ -91,8 +105,7 @@
     progressSec.classList.remove("hidden");
     doneSec.classList.add("hidden");
     errorSec.classList.add("hidden");
-    progressBar.style.width = "0%";
-    progressText.textContent = "Starting download...";
+    setProgress(0, "Starting download…");
 
     try {
       const res = await fetch("/api/video/download", {
@@ -115,16 +128,21 @@
     }
   });
 
-  // ---- Poll progress ----
   function pollProgress(taskId) {
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`/api/video/progress/${taskId}`);
         const data = await res.json();
 
+        if (!res.ok) {
+          clearInterval(interval);
+          showError(data.error || "Lost track of this download.");
+          downloadBtn.disabled = false;
+          return;
+        }
+
         if (data.state === "downloading") {
-          progressBar.style.width = data.progress + "%";
-          progressText.textContent = data.status_text || `${Math.round(data.progress)}%`;
+          setProgress(data.progress, data.status_text || `${Math.round(data.progress || 0)}%`);
         } else if (data.state === "done") {
           clearInterval(interval);
           progressSec.classList.add("hidden");
@@ -145,7 +163,6 @@
     }, 1000);
   }
 
-  // Submit on Enter
   urlInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") fetchBtn.click();
   });

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Privacy – WebTools.wiki{% endblock %}
+{% block meta_description %}How WebTools.wiki handles data for video downloads, paywall reading, and Telegram price alerts.{% endblock %}
+{% block og_title %}Privacy – WebTools.wiki{% endblock %}
+
+{% block content %}
+<section class="tool-page legal-page">
+  <header class="tool-header">
+    <div>
+      <h1>Privacy</h1>
+      <p class="tool-desc">What we collect, why, and what we never do.</p>
+    </div>
+  </header>
+
+  <div class="panel legal-body">
+    <h2>Short version</h2>
+    <p>Video Downloader and Paywall Remover do not require an account. Price Tracker signs you in with a Telegram username so we can send price alerts. We do not sell personal data or show ads.</p>
+
+    <h2>What we process</h2>
+    <ul>
+      <li><strong>Video / Paywall:</strong> the URL you submit, processed server-side to fetch content. We do not create accounts for these tools.</li>
+      <li><strong>Price Tracker:</strong> Telegram username, product URLs, target prices, and price history needed to alert you.</li>
+      <li><strong>Logs:</strong> standard server logs (IP, timestamps, errors) for reliability and abuse prevention.</li>
+    </ul>
+
+    <h2>Third parties</h2>
+    <p>Price Tracker login and alerts use <a href="https://www.callmebot.com/" rel="noopener noreferrer" target="_blank">CallMeBot</a> to deliver Telegram messages. Video metadata/downloads use yt-dlp against the sites you request. Article fetching may use public archives when a publisher blocks direct access.</p>
+
+    <h2>Retention</h2>
+    <p>Tracked products and related history stay until you remove them (or an admin cleans notified/erroring rows). Temporary video download files are deleted after a short TTL. OTP codes expire in minutes.</p>
+
+    <h2>Contact</h2>
+    <p>Questions or deletion requests: open an issue on <a href="https://github.com/ShwetankDhyani/web-tools" rel="noopener noreferrer" target="_blank">GitHub</a>.</p>
+    <p class="legal-updated">Last updated: 24 Aug 2026</p>
+  </div>
+</section>
+{% endblock %}
