@@ -72,6 +72,15 @@ export async function fetchVideoInfo(url: string): Promise<VideoInfo> {
     child.on("close", (code) => {
       clearTimeout(timer);
       if (code !== 0) {
+        const combined = `${stderr}\n${stdout}`.toLowerCase();
+        if (combined.includes("sign in to confirm") || combined.includes("not a bot")) {
+          reject(
+            new Error(
+              "This site is asking for a browser sign-in (bot check). Try another URL, or configure cookies for yt-dlp on the server.",
+            ),
+          );
+          return;
+        }
         reject(new Error("Could not fetch video info. Check the URL."));
         return;
       }

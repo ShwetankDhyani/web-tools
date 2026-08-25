@@ -108,7 +108,7 @@ export async function extractArticle(rawUrl: string): Promise<ReaderArticle> {
   }
 
   const text = (article.textContent ?? "").trim();
-  if (!article.content || text.length < 200) {
+  if (!article.content || text.length < 80) {
     throw new Error(
       "Could not extract a readable article. The page may require a browser, or the publisher blocked automated access.",
     );
