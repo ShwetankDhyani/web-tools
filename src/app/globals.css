@@ -1,0 +1,188 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
+  --font-heading: var(--font-display);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-signal: var(--signal);
+  --color-signal-foreground: var(--signal-foreground);
+  --color-ink: var(--ink);
+  --color-mist: var(--mist);
+  --color-panel: var(--panel);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+/* Precision daylight — cool mist, ink type, teal signal. No purple glow. */
+:root {
+  --background: #eef2f4;
+  --foreground: #10181c;
+  --card: #f7fafb;
+  --card-foreground: #10181c;
+  --popover: #f7fafb;
+  --popover-foreground: #10181c;
+  --primary: #0d3d3a;
+  --primary-foreground: #f4fffd;
+  --secondary: #dce6ea;
+  --secondary-foreground: #163038;
+  --muted: #e2eaee;
+  --muted-foreground: #5a6b73;
+  --accent: #d7efe9;
+  --accent-foreground: #0d3d3a;
+  --destructive: #b42318;
+  --border: #c9d5db;
+  --input: #c9d5db;
+  --ring: #1a9b8e;
+  --signal: #11998e;
+  --signal-foreground: #f4fffd;
+  --ink: #0b1418;
+  --mist: #e8eef1;
+  --panel: rgba(255, 255, 255, 0.72);
+  --chart-1: #11998e;
+  --chart-2: #0d3d3a;
+  --chart-3: #c45c26;
+  --chart-4: #3b6d8c;
+  --chart-5: #6b7280;
+  --radius: 0.75rem;
+  --sidebar: #f7fafb;
+  --sidebar-foreground: #10181c;
+  --sidebar-primary: #0d3d3a;
+  --sidebar-primary-foreground: #f4fffd;
+  --sidebar-accent: #d7efe9;
+  --sidebar-accent-foreground: #0d3d3a;
+  --sidebar-border: #c9d5db;
+  --sidebar-ring: #1a9b8e;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    background-image:
+      radial-gradient(ellipse 90% 60% at 10% -10%, rgba(17, 153, 142, 0.14), transparent 55%),
+      radial-gradient(ellipse 70% 50% at 95% 0%, rgba(59, 109, 140, 0.12), transparent 50%),
+      linear-gradient(180deg, #f4f7f8 0%, #eef2f4 40%, #e8eef1 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--signal) 35%, white);
+    color: var(--ink);
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  }
+
+  .font-body {
+    font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .surface-panel {
+    background: var(--panel);
+    backdrop-filter: blur(16px);
+    border: 1px solid color-mix(in oklab, var(--border) 80%, white);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.65) inset,
+      0 18px 40px -28px rgba(16, 24, 28, 0.35);
+  }
+
+  .grid-atmosphere {
+    background-image:
+      linear-gradient(rgba(16, 24, 28, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(16, 24, 28, 0.035) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, black 20%, transparent 75%);
+  }
+
+  .reader-prose {
+    font-family: var(--font-reader), Georgia, "Times New Roman", serif;
+    font-size: 1.125rem;
+    line-height: 1.75;
+    color: #1a2226;
+  }
+
+  .reader-prose h1,
+  .reader-prose h2,
+  .reader-prose h3 {
+    font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+    line-height: 1.25;
+    margin: 1.5em 0 0.5em;
+    color: var(--ink);
+  }
+
+  .reader-prose p {
+    margin: 0 0 1.1em;
+  }
+
+  .reader-prose img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.5rem;
+    margin: 1.25em 0;
+  }
+
+  .reader-prose a {
+    color: #0d6b63;
+    text-underline-offset: 3px;
+  }
+
+  .reader-prose blockquote {
+    border-left: 3px solid var(--signal);
+    padding-left: 1rem;
+    margin: 1.25em 0;
+    color: #3d4c53;
+  }
+}
