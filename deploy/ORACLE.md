@@ -54,10 +54,6 @@ npm run build
 # 3) Secrets
 cat > .env <<EOF
 FLASK_SESSION_SECURE=1
-PRICE_TRACKER_DEMO=0
-# Optional Telegram delivery:
-# CALLMEBOT_APIKEY=your_key
-# ADMIN_USERNAME=your_telegram
 EOF
 chmod 600 .env
 

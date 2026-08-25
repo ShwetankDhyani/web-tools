@@ -15,6 +15,6 @@ export async function GET() {
     authenticated: true,
     username: user.username,
     isAdmin: user.isAdmin,
-    demo: getDemoMode() || !process.env.CALLMEBOT_APIKEY,
+    demo: getDemoMode(),
   });
 }

@@ -20,6 +20,7 @@ export function PriceTrackerTool() {
   const [username, setUsername] = useState("");
   const [code, setCode] = useState("");
   const [demoCode, setDemoCode] = useState<string | null>(null);
+  const [activateUrl, setActivateUrl] = useState<string | null>(null);
   const [otpSent, setOtpSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,10 +65,12 @@ export function PriceTrackerTool() {
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Could not send code.");
+        setActivateUrl(data.activate_url ?? null);
         return;
       }
       setOtpSent(true);
       setDemoCode(data.code ?? null);
+      setActivateUrl(data.activate_url ?? null);
     } catch {
       setError("Network error.");
     } finally {
@@ -101,11 +104,12 @@ export function PriceTrackerTool() {
 
   async function logout() {
     await fetch("/api/prices/auth/logout", { method: "POST" });
-    setMe({ authenticated: false, demo: true });
+    setMe({ authenticated: false, demo: false });
     setItems([]);
     setOtpSent(false);
     setCode("");
     setDemoCode(null);
+    setActivateUrl(null);
   }
 
   async function addItem(e: FormEvent) {
@@ -160,8 +164,28 @@ export function PriceTrackerTool() {
                 Sign in with Telegram
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                We send a one-time code. In local demo mode the code appears on this page.
+                We send a one-time code to Telegram. First time: send /start to CallMeBot so
+                messages can reach you.
               </p>
+              {activateUrl ? (
+                <a
+                  href={activateUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-block text-sm font-medium text-primary hover:underline"
+                >
+                  Open Telegram and send /start →
+                </a>
+              ) : (
+                <a
+                  href="https://t.me/CallMeBot_txtbot?text=%2Fstart"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-block text-sm font-medium text-primary hover:underline"
+                >
+                  Open Telegram and send /start →
+                </a>
+              )}
             </div>
           </div>
 
@@ -215,6 +239,7 @@ export function PriceTrackerTool() {
                   onClick={() => {
                     setOtpSent(false);
                     setDemoCode(null);
+                    setActivateUrl(null);
                   }}
                 >
                   Back

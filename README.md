@@ -43,12 +43,18 @@ Unit file: `deploy/webtools.next.oracle.service` · nginx: `deploy/nginx-webtool
 
 | Variable | Purpose |
 | --- | --- |
-| `CALLMEBOT_APIKEY` | Deliver Price Tracker OTP / alerts via CallMeBot |
+| `PRICE_TRACKER_DEMO=1` | Show login codes on screen (local only). Production should omit this. |
 | `ADMIN_USERNAME` | Telegram username treated as admin |
-| `PRICE_TRACKER_DEMO=0` | Disable returning OTP codes in API responses |
+| `CRON_SECRET` | Bearer token for `POST /api/prices/check` |
 | `FLASK_SESSION_SECURE=1` | Mark session cookie Secure (HTTPS) |
 
-Without `CALLMEBOT_APIKEY`, Price Tracker runs in **demo mode** and shows the login code on screen.
+Price Tracker sends OTP and drop alerts through [CallMeBot](https://www.callmebot.com/) (no API key). Users must send `/start` to [@CallMeBot_txtbot](https://t.me/CallMeBot_txtbot) once.
+
+Cron on the VPS (every 5 minutes):
+
+```bash
+*/5 * * * * curl -sS -X POST http://127.0.0.1:4321/api/prices/check >/dev/null
+```
 
 ## Stack
 

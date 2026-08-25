@@ -51,12 +51,17 @@ function writeStore(store: StoreShape) {
   renameSync(tmp, STORE_PATH);
 }
 
+/** Demo OTP-on-screen only when explicitly enabled. Production default: Telegram. */
 export function getDemoMode(): boolean {
-  return process.env.PRICE_TRACKER_DEMO !== "0";
+  return process.env.PRICE_TRACKER_DEMO === "1";
 }
 
 export function listProducts(username: string): TrackedProduct[] {
   return readStore().products.filter((p) => p.username === username);
+}
+
+export function listAllProducts(): TrackedProduct[] {
+  return readStore().products;
 }
 
 export function addProduct(

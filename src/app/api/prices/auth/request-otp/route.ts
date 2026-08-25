@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { createOtp, getDemoMode } from "@/lib/prices";
 import { clientKey, rateLimitExceeded } from "@/lib/security";
+import { sendTelegram, telegramActivateUrl } from "@/lib/telegram";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const CALLMEBOT_ACTIVATE = "https://t.me/CallMeBot_txtbot?text=%2Fstart";
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
@@ -20,44 +18,52 @@ export async function POST(req: NextRequest) {
     .replace(/^@/, "")
     .toLowerCase();
 
-  if (!/^[a-zA-Z0-9_]{3,32}$/.test(username)) {
+  if (!/^[a-zA-Z0-9_]{5,32}$/.test(username)) {
     return NextResponse.json(
-      { error: "Enter a valid Telegram username (3–32 letters, numbers, underscore)." },
+      { error: "Enter a valid Telegram username (5–32 letters, numbers, underscore)." },
       { status: 400 },
     );
   }
 
-  const { code, demo } = createOtp(username);
+  const { code } = createOtp(username);
+  const demo = getDemoMode();
 
-  // Production: wire CallMeBot with CALLMEBOT_APIKEY. Local/demo returns the code.
-  const apiKey = process.env.CALLMEBOT_APIKEY;
-  if (apiKey && !demo) {
-    try {
-      const msg = encodeURIComponent(`WebTools.wiki login code: ${code}`);
-      await fetch(
-        `https://api.callmebot.com/text.php?user=@${username}&text=${msg}&apikey=${apiKey}`,
-      );
-    } catch {
-      /* fall through to demo disclosure */
-    }
+  if (demo) {
+    return NextResponse.json({
+      ok: true,
+      demo: true,
+      code,
+      activate_url: telegramActivateUrl(),
+      message: "Demo mode: use the code shown below.",
+    });
+  }
+
+  const sent = await sendTelegram(
+    username,
+    `Your WebTools.wiki login code: ${code}\n\nThis code expires in 10 minutes.`,
+  );
+
+  if (!sent) {
+    return NextResponse.json(
+      {
+        error:
+          "Could not send your login code. Open Telegram, send /start to CallMeBot, then try again.",
+        activate_url: telegramActivateUrl(),
+      },
+      { status: 400 },
+    );
   }
 
   return NextResponse.json({
     ok: true,
-    demo: demo || !apiKey,
-    code: demo || !apiKey ? code : undefined,
-    activate_url: CALLMEBOT_ACTIVATE,
-    message:
-      demo || !apiKey
-        ? "Demo mode: use the code shown below. Configure CALLMEBOT_APIKEY for Telegram delivery."
-        : "Check Telegram for your login code.",
+    demo: false,
+    message: "Login code sent to your Telegram.",
+    activate_url: telegramActivateUrl(),
   });
 }
 
 export async function GET() {
-  const jar = await cookies();
   return NextResponse.json({
-    demo: getDemoMode() || !process.env.CALLMEBOT_APIKEY,
-    session: Boolean(jar.get("wt_session")?.value),
+    demo: getDemoMode(),
   });
 }
