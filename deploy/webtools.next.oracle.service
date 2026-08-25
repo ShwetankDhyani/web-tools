@@ -1,0 +1,22 @@
+[Unit]
+Description=WebTools.wiki (Next.js on Oracle/VPS)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/web-tools
+EnvironmentFile=-/home/ubuntu/web-tools/.env
+Environment=PATH=/home/ubuntu/.local/bin:/home/ubuntu/web-tools/node_modules/.bin:/usr/local/bin:/usr/bin
+Environment=NODE_ENV=production
+Environment=PORT=4321
+Environment=HOSTNAME=127.0.0.1
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5
+# Large video downloads can run long
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

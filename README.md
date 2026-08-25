@@ -34,6 +34,11 @@ npm run build
 npm start
 ```
 
+### Oracle / Ubuntu VPS (recommended for webtools.wiki)
+
+Full cutover from the old Flask service: see **[deploy/ORACLE.md](deploy/ORACLE.md)**.  
+Unit file: `deploy/webtools.next.oracle.service` · nginx: `deploy/nginx-webtools.next.oracle.conf` · updates: `scripts/deploy-oracle.sh`.
+
 ### Optional environment
 
 | Variable | Purpose |
