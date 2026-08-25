@@ -1,7 +1,8 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { Bell, Loader2, Plus, Trash2, LogOut } from "lucide-react";
+import Link from "next/link";
+import { Bell, Loader2, Plus, Trash2, LogOut, Shield } from "lucide-react";
 import { ToolShell } from "./tool-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +13,7 @@ type Me = {
   authenticated: boolean;
   username?: string;
   demo?: boolean;
+  isAdmin?: boolean;
 };
 
 export function PriceTrackerTool() {
@@ -254,16 +256,34 @@ export function PriceTrackerTool() {
             <p className="text-sm">
               Signed in as{" "}
               <span className="font-semibold text-ink">@{me.username}</span>
+              {me.isAdmin ? (
+                <span className="ml-2 inline-flex items-center gap-1 rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
+                  <Shield className="size-3" />
+                  Admin
+                </span>
+              ) : null}
               {me.demo ? (
                 <span className="ml-2 rounded-md bg-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-foreground">
                   Demo
                 </span>
               ) : null}
             </p>
-            <Button variant="ghost" size="sm" className="rounded-lg" onClick={() => void logout()}>
-              <LogOut className="size-4" />
-              Sign out
-            </Button>
+            <div className="flex items-center gap-1">
+              {me.isAdmin ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-lg"
+                  render={<Link href="/prices/admin" />}
+                >
+                  Admin console
+                </Button>
+              ) : null}
+              <Button variant="ghost" size="sm" className="rounded-lg" onClick={() => void logout()}>
+                <LogOut className="size-4" />
+                Sign out
+              </Button>
+            </div>
           </div>
 
           <form onSubmit={addItem} className="space-y-4 rounded-2xl surface-panel p-5">

@@ -168,7 +168,43 @@ export function sessionUser(sessionId: string | undefined): PriceUser | null {
   const store = readStore();
   const session = store.sessions[sessionId];
   if (!session) return null;
-  return store.users.find((u) => u.username === session.username) ?? null;
+  const user = store.users.find((u) => u.username === session.username);
+  if (!user) return null;
+  return { ...user, isAdmin: userIsAdmin(user, store) };
+}
+
+export function userIsAdmin(user: PriceUser, store?: StoreShape): boolean {
+  const data = store ?? readStore();
+  const envAdmin = (process.env.ADMIN_USERNAME || "").replace(/^@/, "").toLowerCase();
+  if (envAdmin && user.username === envAdmin) return true;
+  if (user.isAdmin) return true;
+  if (data.users.length === 1) return true;
+  return false;
+}
+
+export function listUsers(): PriceUser[] {
+  const store = readStore();
+  return store.users.map((u) => ({ ...u, isAdmin: userIsAdmin(u, store) }));
+}
+
+export function deleteProductAdmin(id: string): boolean {
+  const store = readStore();
+  const before = store.products.length;
+  store.products = store.products.filter((p) => p.id !== id);
+  writeStore(store);
+  return store.products.length < before;
+}
+
+export function adminOverview() {
+  const store = readStore();
+  const products = store.products;
+  return {
+    totalProducts: products.length,
+    active: products.filter((p) => !p.notified).length,
+    notified: products.filter((p) => p.notified).length,
+    erroring: products.filter((p) => p.errorCount >= 3).length,
+    totalUsers: store.users.length,
+  };
 }
 
 export function destroySession(sessionId: string | undefined) {
